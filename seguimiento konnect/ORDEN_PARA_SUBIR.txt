@@ -1,0 +1,18 @@
+SUBE ESTOS ARCHIVOS Y CARPETAS A LA RAÍZ DEL REPOSITORIO:
+
+1. .gitignore
+2. README.md
+3. index.html
+4. package.json
+5. package-lock.json
+6. vercel.json
+7. carpeta src
+   - src/updater.js
+8. carpeta dist
+   - dist/index.html
+   - dist/assets/updater-v19.js
+   - dist/assets/xlsx-core.js
+
+NO SUBAS LOS ARCHIVOS DE dist/assets A LA RAÍZ.
+NO RENOMBRES package.json COMO vercel.json.
+NO SUBAS la carpeta contenedora, solo su contenido.
