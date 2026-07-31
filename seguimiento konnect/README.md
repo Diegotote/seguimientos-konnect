@@ -20,3 +20,10 @@ Sube el contenido de esta carpeta respetando exactamente su estructura. En Verce
 - Output Directory: `dist`
 
 El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar dependencias.
+
+
+## Ajuste V20.1
+
+- Nancy continúa excluida únicamente cuando aparece como Directora Comercial.
+- Los prospectos referenciados por Nancy sí se incluyen en Referenciados.
+- Los prospectos referenciados por Erika o Ericka quedan excluidos.
