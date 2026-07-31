@@ -1,6 +1,4 @@
-
-import * as XLSX from "xlsx";
-
+const XLSX = window.XLSX;
 const app = window.__KONNECT__;
 const STORAGE_KEY = "konnect_dashboard_v20_data";
 

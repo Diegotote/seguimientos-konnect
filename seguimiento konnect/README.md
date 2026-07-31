@@ -1,24 +1,22 @@
-# KONNECT Seguimiento V19
+# KONNECT Seguimiento V20
 
-Versión construida sobre el repositorio V18 que ya desplegaba correctamente en Vercel.
+Construida sobre la estructura visual y de despliegue de la V18/V19.
 
-## Cambios comerciales V19
+## Cambios V20
 
-- Excluye por completo cualquier registro que contenga Nancy, Pedro, Erika o Ericka en cualquier campo.
-- Mantiene únicamente el alcance comercial válido.
-- Separa operaciones de Diego y Jorge.
-- Distingue cartera 100% propia y cartera referenciada.
-- Muestra el origen de las referencias y la distribución por estatus.
-- Conserva los cierres del mes actual y del mes siguiente.
-- Mantiene intacta la presentación operativa y el diseño visual V18.
+- Nancy se excluye únicamente cuando aparece en **Director Comercial**.
+- Los prospectos referenciados por Nancy permanecen visibles en la sección **Referenciadas**.
+- Pedro, Erika y Ericka continúan fuera del alcance cuando aparecen como Director Comercial.
+- José Ernesto García y Carlos Alejandro Álvarez ya no aparecen como cierres prioritarios del mes.
+- Nueva diapositiva visible: **Cierres de meses transcurridos**, alimentada con `Membresias_KONNECT_Ejecutivo.xlsx`.
+- Se conservan el diseño, navegación, tablas, selector y presentación operativa.
 
-## Subida a GitHub
+## GitHub / Vercel
 
-Reemplaza todo el contenido del repositorio con el contenido de esta carpeta.
-
-Vercel debe usar:
+Sube el contenido de esta carpeta respetando exactamente su estructura. En Vercel usa:
 
 - Framework Preset: Other
-- Root Directory: ./
+- Root Directory: `./`
+- Output Directory: `dist`
 
-No agregues comandos manuales. `vercel.json` publica directamente la carpeta `dist`, igual que la V18.
+El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar dependencias.
