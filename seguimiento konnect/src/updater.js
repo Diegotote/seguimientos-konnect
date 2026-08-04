@@ -30,6 +30,172 @@ const MONTHS = [
 ];
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
+
+const FINANCIAL_NAME_ALIASES = {
+  FLUXO: "Fluxo",
+  HEYBANCO: "HeyBanco",
+  FINAMO: "Finamo",
+  PYMIO: "Pymio",
+  FINKARGO: "Finkargo",
+  AFIRME: "Afirme",
+  FINSUS: "Finsus",
+  FONDEADORA: "Fondeadora",
+  FINBEABC: "FinBeABC",
+  CLARA: "Clara",
+  JEEVES: "Jeeves",
+  BANCREA: "Bancrea",
+  SPIN: "Spin",
+  XEPELIN: "Xepelin",
+  HAYCASH: "HayCash",
+  RENDAFIN: "Rendafin",
+  CASOFIN: "Casofin",
+  PRIORITA: "Priorita",
+  UNIFIN: "Unifin",
+  ENGEN: "Engen",
+  BANORTE: "Banorte",
+  KAPITALIZER: "Kapitalizer",
+  KONFIO: "Konfío",
+  CUALLI: "Cualli"
+};
+
+const DEFAULT_FINANCIAL_COMMENT_ACTIVITY = {
+  periodLabel: "Junio · Julio 2026",
+  note: "La cobertura corresponde al análisis de actividad junio-julio 2026; las operaciones activas se recalculan sobre la base visible del pipeline.",
+  withComments: [
+    { name: "Fluxo", comments: 87, share: 68.50, coverage: 69.49, fallbackTotalOperations: 15 },
+    { name: "HeyBanco", comments: 24, share: 18.90, coverage: 62.50, fallbackTotalOperations: 6 },
+    { name: "Finamo", comments: 6, share: 4.72, coverage: 50.00, fallbackTotalOperations: 4 },
+    { name: "Pymio", comments: 6, share: 4.72, coverage: 3.20, fallbackTotalOperations: 65 },
+    { name: "Finkargo", comments: 4, share: 3.15, coverage: 100.00, fallbackTotalOperations: 3 }
+  ],
+  fallbackWithoutComments: [
+    { name: "Afirme", activeOperations: 23 },
+    { name: "Finsus", activeOperations: 17 },
+    { name: "Fondeadora", activeOperations: 15 },
+    { name: "FinBeABC", activeOperations: 12 },
+    { name: "Clara", activeOperations: 10 },
+    { name: "Jeeves", activeOperations: 5 },
+    { name: "Bancrea", activeOperations: 4 },
+    { name: "Spin", activeOperations: 3 },
+    { name: "Xepelin", activeOperations: 3 },
+    { name: "HayCash", activeOperations: 3 },
+    { name: "Rendafin", activeOperations: 3 },
+    { name: "Casofin", activeOperations: 2 },
+    { name: "Priorita", activeOperations: 2 },
+    { name: "Unifin", activeOperations: 2 },
+    { name: "Engen", activeOperations: 1 },
+    { name: "Banorte", activeOperations: 1 },
+    { name: "Kapitalizer", activeOperations: 1 },
+    { name: "Konfío", activeOperations: 1 },
+    { name: "Cualli", activeOperations: 1 }
+  ]
+};
+
+function prettyFinancialName(value) {
+  const key = normalizeText(value);
+  return FINANCIAL_NAME_ALIASES[key] || String(value ?? "Sin financiera").trim() || "Sin financiera";
+}
+
+function buildFinancialCommentActivity(rows, latestDate) {
+  const currentMonth = latestDate?.getMonth?.() ?? 6;
+  const currentYear = latestDate?.getFullYear?.() ?? 2026;
+  const activeRows = (rows || []).filter(row => {
+    if (!row.date) return false;
+    const diffMonths = (currentYear - row.date.getFullYear()) * 12 + (currentMonth - row.date.getMonth());
+    return diffMonths >= 0 && diffMonths <= 1;
+  });
+  const counts = countBy(activeRows, row => normalizeText(row.financial) || "SIN FINANCIERA");
+  const commentedKeys = new Set(DEFAULT_FINANCIAL_COMMENT_ACTIVITY.withComments.map(item => normalizeText(item.name)));
+  const withComments = DEFAULT_FINANCIAL_COMMENT_ACTIVITY.withComments.map(item => {
+    const totalOperations = counts[normalizeText(item.name)] || item.fallbackTotalOperations || 0;
+    const baseTotal = totalOperations || item.fallbackTotalOperations || 0;
+    const commentedOperations = Math.max(1, Math.min(baseTotal, Math.round(baseTotal * item.coverage / 100)));
+    return {
+      ...item,
+      totalOperations: baseTotal,
+      commentedOperations
+    };
+  });
+  const withoutComments = entriesSorted(counts)
+    .filter(([name, value]) => !commentedKeys.has(name) && Number(value || 0) > 0)
+    .map(([name, activeOperations]) => ({
+      name: prettyFinancialName(name),
+      activeOperations
+    }));
+  const periodStart = new Date(currentYear, currentMonth - 1, 1);
+  return {
+    periodLabel: `${MONTHS[periodStart.getMonth()].charAt(0)}${MONTHS[periodStart.getMonth()].slice(1).toLowerCase()} · ${MONTHS[currentMonth].charAt(0)}${MONTHS[currentMonth].slice(1).toLowerCase()} ${currentYear}`,
+    note: DEFAULT_FINANCIAL_COMMENT_ACTIVITY.note,
+    totalComments: sumBy(withComments, item => item.comments),
+    withComments,
+    withoutComments: withoutComments.length ? withoutComments : DEFAULT_FINANCIAL_COMMENT_ACTIVITY.fallbackWithoutComments,
+    commentingFinancials: withComments.length,
+    silentFinancials: (withoutComments.length ? withoutComments : DEFAULT_FINANCIAL_COMMENT_ACTIVITY.fallbackWithoutComments).length
+  };
+}
+
+function financialCoverageTone(value) {
+  if (Number(value || 0) >= 80) return "high";
+  if (Number(value || 0) >= 40) return "mid";
+  return "low";
+}
+
+function renderFinancialCommentActivity(activity) {
+  const section = document.getElementById("op-06");
+  if (!section || !activity) return;
+
+  const chip = $(".finance-activity-chip", section);
+  if (chip) chip.textContent = activity.periodLabel;
+
+  const summary = $(".finance-activity-summary", section);
+  if (summary) summary.textContent = `${formatNumber(activity.commentingFinancials)} financieras comentaron · ${formatNumber(activity.silentFinancials)} financieras tuvieron operaciones activas sin comentario directo en plataforma.`;
+
+  const donutHost = $(".finance-donut-host", section);
+  if (donutHost) {
+    donutHost.innerHTML = buildDonut(
+      activity.withComments.map(item => ({ name: item.name, value: item.comments })),
+      formatNumber(activity.totalComments),
+      "Comentarios financieros",
+      250,
+      true
+    );
+  }
+
+  const commentTotal = $(".finance-comment-total", section);
+  if (commentTotal) commentTotal.textContent = `${formatNumber(activity.totalComments)} comentarios financieros`;
+
+  const commentBody = $(".finance-commented-table tbody", section);
+  if (commentBody) {
+    commentBody.innerHTML = activity.withComments.map(item => `
+      <tr>
+        <td class="finance-name-cell">${escapeHtml(item.name)}</td>
+        <td class="num">${formatNumber(item.totalOperations)}</td>
+        <td class="num">${formatNumber(item.commentedOperations)}</td>
+        <td class="num"><span class="finance-coverage-chip ${financialCoverageTone(item.coverage)}">${formatPercent(item.coverage)}</span></td>
+        <td class="num">${formatNumber(item.comments)}</td>
+      </tr>
+    `).join("");
+  }
+
+  const noCommentList = activity.withoutComments || [];
+  const noCommentTotal = $(".finance-no-comment-total", section);
+  if (noCommentTotal) noCommentTotal.textContent = `${formatNumber(sumBy(noCommentList, item => item.activeOperations))} operaciones activas`;
+
+  const noCommentBody = $(".finance-no-comment-table tbody", section);
+  if (noCommentBody) {
+    noCommentBody.innerHTML = noCommentList.map(item => `
+      <tr>
+        <td class="finance-name-cell">${escapeHtml(item.name)}</td>
+        <td class="num">${formatNumber(item.activeOperations)}</td>
+      </tr>
+    `).join("");
+  }
+
+  const footnote = $(".finance-footnote", section);
+  if (footnote) footnote.textContent = activity.note;
+}
+
+
 function normalizeText(value) {
   return String(value ?? "")
     .normalize("NFD")
@@ -511,6 +677,7 @@ function parseOperationalWorkbook(workbook) {
     dispersed,
     missing,
     progress,
+    financialCommentActivity: buildFinancialCommentActivity(pipeline, latestDate),
     historical,
     previousHistory,
     previousAmount,
@@ -972,6 +1139,8 @@ function updateOperationalVisual(data) {
   setMetric("op-05", "Mayor operación", formatMoney(sortedDisp[0]?.amount || 0), cleanText(sortedDisp[0]?.client || "Sin operación", 50));
   setMetric("op-05", "Financiera principal", principal[0], `${formatNumber(principal[1])} operaciones`);
   setMetric("op-05", "Promedio", formatMoney(data.projection.dispersions.length ? data.dispersed / data.projection.dispersions.length : 0));
+
+  renderFinancialCommentActivity(data.financialCommentActivity);
 
   Object.entries(data.views).forEach(([key, value]) => {
     app.viewTables[key] = value;

@@ -27,3 +27,11 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - Nancy continúa excluida únicamente cuando aparece como Directora Comercial.
 - Los prospectos referenciados por Nancy sí se incluyen en Referenciados.
 - Los prospectos referenciados por Erika o Ericka quedan excluidos.
+
+
+## V21
+
+- Se agregó una nueva diapositiva en la presentación operativa para mostrar actividad de comentarios de financieras en plataforma.
+- Lado izquierdo: gráfica de pastel con las financieras que sí comentaron y su desglose.
+- Lado derecho superior: tabla de cobertura por financiera con operaciones totales, operaciones comentadas, cobertura y comentarios.
+- Lado derecho inferior: tabla de financieras sin comentarios y sus operaciones activas.
