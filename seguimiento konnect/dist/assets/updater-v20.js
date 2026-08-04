@@ -1,3 +1,4 @@
+
 const XLSX = window.XLSX;
 const app = window.__KONNECT__;
 const STORAGE_KEY = "konnect_dashboard_v20_data";
@@ -502,6 +503,59 @@ function parseHistoricalClosings(rows) {
   return result.sort((a, b) => a.monthIndex - b.monthIndex);
 }
 
+
+function parseClosures2026Rows(rows) {
+  const parsed = [];
+  let currentMonthIndex = null;
+  let currentMonthName = "";
+  let currentYear = new Date().getFullYear();
+
+  (rows || []).forEach(row => {
+    const firstCell = normalizeText(row?.[0]);
+    const sectionMatch = firstCell.match(/CIERRE\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)(?:\s+(\d{4}))?/);
+    if (sectionMatch) {
+      currentMonthName = sectionMatch[1];
+      currentMonthIndex = MONTHS.findIndex(month => normalizeText(month) === currentMonthName);
+      if (sectionMatch[2]) currentYear = Number(sectionMatch[2]);
+      return;
+    }
+
+    if (currentMonthIndex == null) return;
+    const director = String(row?.[0] ?? "").trim();
+    const amountRaw = row?.[1];
+    const financial = String(row?.[2] ?? "").trim();
+    const broker = String(row?.[3] ?? "").trim();
+    const client = String(row?.[4] ?? "").trim();
+    const normalizedDirector = normalizeText(director);
+
+    if (!director || !financial || !broker || !client) return;
+    if (
+      normalizedDirector.includes("DIRECTOR COMERCIAL") ||
+      normalizedDirector.includes("TOTAL DISPERSADO") ||
+      normalizedDirector.includes("MONTO DISPERSADO") ||
+      normalizedDirector.startsWith("ZONA ")
+    ) return;
+
+    parsed.push({
+      month: MONTHS[currentMonthIndex],
+      monthIndex: currentMonthIndex,
+      year: currentYear,
+      director,
+      amount: toNumber(amountRaw),
+      amountDisplay: formatMoney(toNumber(amountRaw)),
+      financial,
+      broker,
+      client,
+      name: client,
+      office: broker,
+      region: financial,
+      membership: director
+    });
+  });
+
+  return parsed;
+}
+
 function parseOperationalWorkbook(workbook) {
   const pipelineRows = sheetRows(workbook, "PIPELINE");
   const projectionRows = sheetRows(workbook, "PROYECCIÓN") || sheetRows(workbook, "PROYECCION");
@@ -509,6 +563,8 @@ function parseOperationalWorkbook(workbook) {
   if (!pipelineRows || !projectionRows || !closureRows) {
     throw new Error("El archivo debe contener las hojas PIPELINE, PROYECCIÓN y CIERRES 2026.");
   }
+
+  const closures2026 = parseClosures2026Rows(closureRows);
 
   const headerRow = pipelineRows.findIndex(row => normalizeText(row?.[0]).includes("FECHA") && normalizeText(row?.[1]).includes("ESTATUS"));
   if (headerRow < 0) throw new Error("No pude localizar los encabezados del Pipeline.");
@@ -692,6 +748,7 @@ function parseOperationalWorkbook(workbook) {
     missing,
     progress,
     financialCommentActivity: buildFinancialCommentActivity(pipeline, latestDate),
+    closures2026,
     historical,
     previousHistory,
     previousAmount,
@@ -722,7 +779,7 @@ function isExcludedCommercialRecord(record) {
   return directorExcluded || referredByErika;
 }
 
-const HISTORICAL_MEMBERSHIP_CLOSINGS = [{"month":"MARZO","monthIndex":2,"name":"HUGO NAVARRO / ALEJANDRO ORTA","office":"ROIESTATE","email":"roiestate@konnect.mx","phone":"5626001647 / 3339431770","region":"GUADALAJARA","membership":"KONNECT EVOLUCIONA"},{"month":"MARZO","monthIndex":2,"name":"MIGUEL PARDO","office":"BULLDOG FIANCE","email":"bulldog.finance@konnect.mx","phone":"4427479785","region":"QUERÉTARO","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"BEATRIZ PLACENCIA","office":"NEXORA CAPITAL","email":"nexora.capital@konnect.mx","phone":"5518012750","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"TANIA GUILLERMINA REYES FLORES / DAMIAN REYES","office":"XQUENDA","email":"xquenda@konnect.mx","phone":"5573257692 / 5523166908","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"EMMANUEL SALGADO","office":"ESTRON","email":"estron@konnect.mx","phone":"5522185956","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"RAMON ENRRIQUEZ","office":"BULL KAPITAL","email":"bullkapital@konnect.mx","phone":"2226507287","region":"PUEBLA","membership":"KONNECT EVOLUCIONA"},{"month":"MAYO","monthIndex":4,"name":"GERARDO RENDÓN","office":"ARF","email":"arf@konnect.mx","phone":"8111765725","region":"MONTERREY","membership":"KONNECT EVOLUCIONA"},{"month":"MAYO","monthIndex":4,"name":"JUAN OTERO","office":"KREO","email":"comercial1kreojom@konnect.mx","phone":"5525596582","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"MAYO","monthIndex":4,"name":"JAIME CÁRDENAS","office":"CEAF SERVICIOS","email":"ceaf.servicios@konnect.mx","phone":"8119384852","region":"MONTERREY","membership":"KONNECT EVOLUCIONA"},{"month":"JUNIO","monthIndex":5,"name":"MAURICIO ESPINOSA / MAYERIK ADAME ESPINOSA","office":"ASESORES PYME A&M","email":"mayerik.adame@konnect.mx","phone":"4461390401","region":"QUERÉTARO","membership":"KONNECT EVOLUCIONA"},{"month":"JUNIO","monthIndex":5,"name":"LUIS ANTONIO REYES","office":"LUIS ANTONIO REYES","email":"antonio.reyes@konnect.mx","phone":"5539961559","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"JULIO","monthIndex":6,"name":"CARLOS ALEJANDRO ÁLVAREZ","office":"CAPITAL DAF","email":"capitaldaf@konnect.mx","phone":"3311785168","region":"GUADALAJARA","membership":"KONNECT EVOLUCIONA"},{"month":"JULIO","monthIndex":6,"name":"JOSÉ ERNESTO GARCÍA","office":"LENDUM","email":"egarcia@konnect.mx","phone":"6621800998","region":"HERMOSILLO","membership":"KONNECT EVOLUCIONA"}];
+const HISTORICAL_MEMBERSHIP_CLOSINGS = [{"month":"MARZO","monthIndex":2,"name":"HUGO NAVARRO / ALEJANDRO ORTA","office":"ROIESTATE","email":"roiestate@konnect.mx","phone":"5626001647 / 3339431770","region":"GUADALAJARA","membership":"KONNECT EVOLUCIONA"},{"month":"MARZO","monthIndex":2,"name":"MIGUEL PARDO","office":"BULLDOG FIANCE","email":"bulldog.finance@konnect.mx","phone":"4427479785","region":"QUERÉTARO","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"BEATRIZ PLACENCIA","office":"NEXORA CAPITAL","email":"nexora.capital@konnect.mx","phone":"5518012750","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"TANIA GUILLERMINA REYES FLORES / DAMIAN REYES","office":"XQUENDA","email":"xquenda@konnect.mx","phone":"5573257692 / 5523166908","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"EMMANUEL SALGADO","office":"ESTRON","email":"estron@konnect.mx","phone":"5522185956","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"ABRIL","monthIndex":3,"name":"RAMON ENRRIQUEZ","office":"BULL KAPITAL","email":"bullkapital@konnect.mx","phone":"2226507287","region":"PUEBLA","membership":"KONNECT EVOLUCIONA"},{"month":"MAYO","monthIndex":4,"name":"GERARDO RENDÓN","office":"ARF","email":"arf@konnect.mx","phone":"8111765725","region":"MONTERREY","membership":"KONNECT EVOLUCIONA"},{"month":"MAYO","monthIndex":4,"name":"JUAN OTERO","office":"KREO","email":"comercial1kreojom@konnect.mx","phone":"5525596582","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"MAYO","monthIndex":4,"name":"JAIME CÁRDENAS","office":"CEAF SERVICIOS","email":"ceaf.servicios@konnect.mx","phone":"8119384852","region":"MONTERREY","membership":"KONNECT EVOLUCIONA"},{"month":"JUNIO","monthIndex":5,"name":"MAURICIO ESPINOSA / MAYERIK ADAME ESPINOSA","office":"ASESORES PYME A&M","email":"mayerik.adame@konnect.mx","phone":"4461390401","region":"QUERÉTARO","membership":"KONNECT EVOLUCIONA"},{"month":"JUNIO","monthIndex":5,"name":"LUIS ANTONIO REYES","office":"LUIS ANTONIO REYES","email":"antonio.reyes@konnect.mx","phone":"5539961559","region":"CDMX","membership":"KONNECT EVOLUCIONA"},{"month":"JULIO","monthIndex":6,"name":"CARLOS ALEJANDRO ÁLVAREZ","office":"CAPITAL DAF","email":"capitaldaf@konnect.mx","phone":"3311785168","region":"GUADALAJARA","membership":"KONNECT EVOLUCIONA"},{"month":"JULIO","monthIndex":6,"name":"JOSÉ ERNESTO GARCÍA","office":"LENDUM","email":"egarcia@konnect.mx","phone":"6621800998","region":"HERMOSILLO","membership":"KONNECT EVOLUCIONA"},{"month":"AGOSTO","monthIndex":7,"name":"MELANY MARIEL TORRES GUDIÑO","office":"MTG Capital","email":"mtgcapital@konnect.mx","phone":"55 4800 9786","region":"ESTADO DE MÉXICO","membership":"KONNECT EVOLUCIONA"}];
 
 function isHistoricalClosedName(value) {
   const text = normalizeText(value);
@@ -1215,33 +1272,89 @@ function renderMonthClosingSlide(sectionId, rows, monthIndex, year) {
 function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
   const section = document.getElementById("com-history");
   if (!section) return;
-  const dataRows = Array.isArray(rows) && rows.length ? rows : HISTORICAL_MEMBERSHIP_CLOSINGS;
-  const monthCounts = countBy(dataRows, row => row.month || "Sin mes");
-  const topMonth = entriesSorted(monthCounts)[0] || ["—", 0];
+  const dataRows = (Array.isArray(rows) && rows.length ? rows : HISTORICAL_MEMBERSHIP_CLOSINGS)
+    .slice()
+    .sort((a, b) => Number(a.monthIndex || 0) - Number(b.monthIndex || 0));
+
+  const monthCountsMap = new Map();
+  dataRows.forEach(row => {
+    const key = `${Number(row.monthIndex || 0)}|${row.month || "Sin mes"}`;
+    monthCountsMap.set(key, (monthCountsMap.get(key) || 0) + 1);
+  });
+  const monthEntries = [...monthCountsMap.entries()]
+    .map(([key, value]) => {
+      const [monthIndex, month] = key.split("|");
+      return { monthIndex: Number(monthIndex), month, value };
+    })
+    .sort((a, b) => a.monthIndex - b.monthIndex);
+
+  const today = new Date();
+  const latestMonthIndex = today.getMonth();
+  const previousMonthIndex = (latestMonthIndex + 11) % 12;
+  const latestMonthName = MONTHS[latestMonthIndex] || "—";
+  const previousMonthName = MONTHS[previousMonthIndex] || "—";
+  const currentRows = dataRows.filter(row => Number(row.monthIndex || 0) === latestMonthIndex);
+  const previousRows = dataRows.filter(row => Number(row.monthIndex || 0) === previousMonthIndex);
+  const topMonth = monthEntries.reduce((best, item) => (item.value > (best?.value || 0) ? item : best), monthEntries[0] || { month: "—", value: 0 });
 
   const totalNode = $(".history-close-total", section);
   const monthNode = $(".history-close-months", section);
   const topMonthNode = $(".history-close-top-month", section);
   const topMonthSub = $(".history-close-top-month-sub", section);
-  const countNode = $(".history-table-count", section);
-  if (totalNode) totalNode.textContent = formatNumber(dataRows.length);
-  if (monthNode) monthNode.textContent = formatNumber(Object.keys(monthCounts).length);
-  if (topMonthNode) topMonthNode.textContent = topMonth[0];
-  if (topMonthSub) topMonthSub.textContent = `${formatNumber(topMonth[1])} cierres`;
-  if (countNode) countNode.textContent = `${formatNumber(dataRows.length)} registros`;
+  const rangeNode = $(".history-range-chip", section);
+  const currentTitle = $(".history-current-title", section);
+  const prevTitle = $(".history-prev-title", section);
+  const currentCount = $(".history-current-count", section);
+  const prevCount = $(".history-prev-count", section);
+  const chartRange = $(".history-chart-range", section);
 
-  const tbody = $(".historical-closing-table tbody", section);
-  if (!tbody) return;
-  tbody.innerHTML = dataRows.map(row => `
-    <tr>
-      <td><span class="history-month-pill">${escapeHtml(row.month || "—")}</span></td>
-      <td><div class="priority-person">${escapeHtml(row.name || "—")}</div><div class="priority-location">${escapeHtml(row.email || "")}</div></td>
-      <td>${escapeHtml(row.office || "—")}</td>
-      <td>${escapeHtml(row.region || "—")}</td>
-      <td>${escapeHtml(row.membership || "—")}</td>
-      <td><span class="month-status-pill status-success">CERRADO</span></td>
-    </tr>
-  `).join("");
+  if (totalNode) totalNode.textContent = formatNumber(dataRows.length);
+  if (monthNode) monthNode.textContent = formatNumber(monthEntries.length);
+  if (topMonthNode) topMonthNode.textContent = topMonth.month || "—";
+  if (topMonthSub) topMonthSub.textContent = `${formatNumber(topMonth.value || 0)} cierres`;
+  if (rangeNode && monthEntries.length) rangeNode.textContent = `${monthEntries[0].month} · ${monthEntries[monthEntries.length - 1].month} 2026`;
+  if (chartRange && monthEntries.length) chartRange.textContent = `${monthEntries[0].month} a ${monthEntries[monthEntries.length - 1].month} 2026`;
+  if (currentTitle) currentTitle.textContent = `Cierres de ${latestMonthName.toLowerCase()}`;
+  if (prevTitle) prevTitle.textContent = `Cierres de ${previousMonthName.toLowerCase()}`;
+  if (currentCount) currentCount.textContent = `${formatNumber(currentRows.length)} ${currentRows.length === 1 ? "registro" : "registros"}`;
+  if (prevCount) prevCount.textContent = `${formatNumber(previousRows.length)} ${previousRows.length === 1 ? "registro" : "registros"}`;
+
+  const renderList = target => rowsList => {
+    const node = $(target, section);
+    if (!node) return;
+    if (!rowsList.length) {
+      node.innerHTML = '<div class="history-empty">Sin cierres registrados en este mes.</div>';
+      return;
+    }
+    node.innerHTML = rowsList.map(row => `
+      <div class="history-close-item">
+        <div>
+          <div class="history-close-name">${escapeHtml(row.name || "—")}</div>
+          <div class="history-close-meta">${escapeHtml(row.financial || row.region || "—")} · ${escapeHtml(row.broker || row.office || "—")} · ${escapeHtml(row.amountDisplay || "")}</div>
+        </div>
+        <span class="month-status-pill status-success">CERRADO</span>
+      </div>
+    `).join("");
+  };
+  renderList('.history-current-list')(currentRows);
+  renderList('.history-prev-list')(previousRows);
+
+  const chartNode = $(".history-bars", section);
+  if (chartNode) {
+    const maxValue = Math.max(...monthEntries.map(item => Number(item.value || 0)), 1);
+    chartNode.innerHTML = monthEntries.map(item => {
+      const height = Math.max(22, Math.round((Number(item.value || 0) / maxValue) * 220));
+      return `
+        <div class="history-bar-col">
+          <div class="history-bar-value">${formatNumber(item.value || 0)}</div>
+          <div class="history-bar-track">
+            <div class="history-bar-fill" style="height:${height}px"></div>
+          </div>
+          <div class="history-bar-label">${escapeHtml(item.month)}</div>
+        </div>
+      `;
+    }).join("");
+  }
 }
 
 function scopeStatusClass(name) {
@@ -1359,7 +1472,7 @@ function updateCommercialVisual(data) {
 
   renderDirectorScopeSlide(data);
   renderMonthClosingSlide("com-02", data.currentClosings || [], data.currentCloseMonthIndex ?? new Date().getMonth(), data.currentCloseYear ?? new Date().getFullYear());
-  renderHistoricalClosingsSlide(data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS);
+  renderHistoricalClosingsSlide(app.closures2026 || data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS);
   renderMonthClosingSlide("com-03", data.nextClosings || [], data.nextCloseMonthIndex ?? ((new Date().getMonth() + 1) % 12), data.nextCloseYear ?? new Date().getFullYear());
 
   const topLocation = entriesSorted(data.locationsOpen || {})[0] || ["Sin localidad", 0];
@@ -1386,7 +1499,22 @@ function updateCommercialVisual(data) {
 }
 
 function applyPayload(payload, persist = true) {
-  if (payload.type === "operational") updateOperationalVisual(payload);
+  if (payload.type === "operational") {
+    updateOperationalVisual(payload);
+    if (Array.isArray(payload.closures2026)) {
+      app.closures2026 = payload.closures2026;
+      renderHistoricalClosingsSlide(payload.closures2026);
+      app.viewTables.cierres_transcurridos = {
+        title: "Cierres 2026",
+        columns: ["Mes", "Director", "Financiera", "Broker", "Cliente", "Monto"],
+        rows: payload.closures2026.map(row => [row.month, row.director, row.financial, row.broker, row.client, row.amountDisplay]),
+        summary: [
+          { label: "Operaciones cerradas", value: formatNumber(payload.closures2026.length) },
+          { label: "Monto total", value: formatMoney(sumBy(payload.closures2026, row => row.amount)) }
+        ]
+      };
+    }
+  }
   if (payload.type === "commercial") updateCommercialVisual(payload);
   if (persist) {
     const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -1405,7 +1533,8 @@ function showValidation(payload, file) {
       ["Operaciones Pipeline", formatNumber(Object.values(payload.stages).reduce((s, x) => s + x.count, 0))],
       ["Proyección", formatNumber(payload.projection.projection.length)],
       ["Dispersiones", formatNumber(payload.projection.dispersions.length)],
-      ["Histórico 2026", `${payload.historical.length} meses`]
+      ["Histórico de dispersión", `${payload.historical.length} meses`],
+      ["Cierres 2026", `${formatNumber(payload.closures2026?.length || 0)} operaciones`]
     );
   } else {
     items.push(

@@ -504,6 +504,59 @@ function parseHistoricalClosings(rows) {
   return result.sort((a, b) => a.monthIndex - b.monthIndex);
 }
 
+
+function parseClosures2026Rows(rows) {
+  const parsed = [];
+  let currentMonthIndex = null;
+  let currentMonthName = "";
+  let currentYear = new Date().getFullYear();
+
+  (rows || []).forEach(row => {
+    const firstCell = normalizeText(row?.[0]);
+    const sectionMatch = firstCell.match(/CIERRE\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)(?:\s+(\d{4}))?/);
+    if (sectionMatch) {
+      currentMonthName = sectionMatch[1];
+      currentMonthIndex = MONTHS.findIndex(month => normalizeText(month) === currentMonthName);
+      if (sectionMatch[2]) currentYear = Number(sectionMatch[2]);
+      return;
+    }
+
+    if (currentMonthIndex == null) return;
+    const director = String(row?.[0] ?? "").trim();
+    const amountRaw = row?.[1];
+    const financial = String(row?.[2] ?? "").trim();
+    const broker = String(row?.[3] ?? "").trim();
+    const client = String(row?.[4] ?? "").trim();
+    const normalizedDirector = normalizeText(director);
+
+    if (!director || !financial || !broker || !client) return;
+    if (
+      normalizedDirector.includes("DIRECTOR COMERCIAL") ||
+      normalizedDirector.includes("TOTAL DISPERSADO") ||
+      normalizedDirector.includes("MONTO DISPERSADO") ||
+      normalizedDirector.startsWith("ZONA ")
+    ) return;
+
+    parsed.push({
+      month: MONTHS[currentMonthIndex],
+      monthIndex: currentMonthIndex,
+      year: currentYear,
+      director,
+      amount: toNumber(amountRaw),
+      amountDisplay: formatMoney(toNumber(amountRaw)),
+      financial,
+      broker,
+      client,
+      name: client,
+      office: broker,
+      region: financial,
+      membership: director
+    });
+  });
+
+  return parsed;
+}
+
 function parseOperationalWorkbook(workbook) {
   const pipelineRows = sheetRows(workbook, "PIPELINE");
   const projectionRows = sheetRows(workbook, "PROYECCIÓN") || sheetRows(workbook, "PROYECCION");
@@ -511,6 +564,8 @@ function parseOperationalWorkbook(workbook) {
   if (!pipelineRows || !projectionRows || !closureRows) {
     throw new Error("El archivo debe contener las hojas PIPELINE, PROYECCIÓN y CIERRES 2026.");
   }
+
+  const closures2026 = parseClosures2026Rows(closureRows);
 
   const headerRow = pipelineRows.findIndex(row => normalizeText(row?.[0]).includes("FECHA") && normalizeText(row?.[1]).includes("ESTATUS"));
   if (headerRow < 0) throw new Error("No pude localizar los encabezados del Pipeline.");
@@ -694,6 +749,7 @@ function parseOperationalWorkbook(workbook) {
     missing,
     progress,
     financialCommentActivity: buildFinancialCommentActivity(pipeline, latestDate),
+    closures2026,
     historical,
     previousHistory,
     previousAmount,
@@ -1233,10 +1289,11 @@ function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
     })
     .sort((a, b) => a.monthIndex - b.monthIndex);
 
-  const latestMonthIndex = monthEntries.length ? monthEntries[monthEntries.length - 1].monthIndex : 0;
-  const previousMonthIndex = monthEntries.length > 1 ? monthEntries[monthEntries.length - 2].monthIndex : latestMonthIndex;
-  const latestMonthName = monthEntries.length ? monthEntries[monthEntries.length - 1].month : "—";
-  const previousMonthName = monthEntries.length > 1 ? monthEntries[monthEntries.length - 2].month : "—";
+  const today = new Date();
+  const latestMonthIndex = today.getMonth();
+  const previousMonthIndex = (latestMonthIndex + 11) % 12;
+  const latestMonthName = MONTHS[latestMonthIndex] || "—";
+  const previousMonthName = MONTHS[previousMonthIndex] || "—";
   const currentRows = dataRows.filter(row => Number(row.monthIndex || 0) === latestMonthIndex);
   const previousRows = dataRows.filter(row => Number(row.monthIndex || 0) === previousMonthIndex);
   const topMonth = monthEntries.reduce((best, item) => (item.value > (best?.value || 0) ? item : best), monthEntries[0] || { month: "—", value: 0 });
@@ -1274,7 +1331,7 @@ function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
       <div class="history-close-item">
         <div>
           <div class="history-close-name">${escapeHtml(row.name || "—")}</div>
-          <div class="history-close-meta">${escapeHtml(row.office || "—")} · ${escapeHtml(row.region || "—")}</div>
+          <div class="history-close-meta">${escapeHtml(row.financial || row.region || "—")} · ${escapeHtml(row.broker || row.office || "—")} · ${escapeHtml(row.amountDisplay || "")}</div>
         </div>
         <span class="month-status-pill status-success">CERRADO</span>
       </div>
@@ -1416,7 +1473,7 @@ function updateCommercialVisual(data) {
 
   renderDirectorScopeSlide(data);
   renderMonthClosingSlide("com-02", data.currentClosings || [], data.currentCloseMonthIndex ?? new Date().getMonth(), data.currentCloseYear ?? new Date().getFullYear());
-  renderHistoricalClosingsSlide(data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS);
+  renderHistoricalClosingsSlide(app.closures2026 || data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS);
   renderMonthClosingSlide("com-03", data.nextClosings || [], data.nextCloseMonthIndex ?? ((new Date().getMonth() + 1) % 12), data.nextCloseYear ?? new Date().getFullYear());
 
   const topLocation = entriesSorted(data.locationsOpen || {})[0] || ["Sin localidad", 0];
@@ -1443,7 +1500,22 @@ function updateCommercialVisual(data) {
 }
 
 function applyPayload(payload, persist = true) {
-  if (payload.type === "operational") updateOperationalVisual(payload);
+  if (payload.type === "operational") {
+    updateOperationalVisual(payload);
+    if (Array.isArray(payload.closures2026)) {
+      app.closures2026 = payload.closures2026;
+      renderHistoricalClosingsSlide(payload.closures2026);
+      app.viewTables.cierres_transcurridos = {
+        title: "Cierres 2026",
+        columns: ["Mes", "Director", "Financiera", "Broker", "Cliente", "Monto"],
+        rows: payload.closures2026.map(row => [row.month, row.director, row.financial, row.broker, row.client, row.amountDisplay]),
+        summary: [
+          { label: "Operaciones cerradas", value: formatNumber(payload.closures2026.length) },
+          { label: "Monto total", value: formatMoney(sumBy(payload.closures2026, row => row.amount)) }
+        ]
+      };
+    }
+  }
   if (payload.type === "commercial") updateCommercialVisual(payload);
   if (persist) {
     const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -1462,7 +1534,8 @@ function showValidation(payload, file) {
       ["Operaciones Pipeline", formatNumber(Object.values(payload.stages).reduce((s, x) => s + x.count, 0))],
       ["Proyección", formatNumber(payload.projection.projection.length)],
       ["Dispersiones", formatNumber(payload.projection.dispersions.length)],
-      ["Histórico 2026", `${payload.historical.length} meses`]
+      ["Histórico de dispersión", `${payload.historical.length} meses`],
+      ["Cierres 2026", `${formatNumber(payload.closures2026?.length || 0)} operaciones`]
     );
   } else {
     items.push(

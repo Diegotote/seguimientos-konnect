@@ -47,3 +47,9 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 ## V23
 - Actualizada la diapositiva comercial de cierres históricos con nueva lectura visual (gráfica vertical + cierres de agosto y julio).
 - Integrada la nueva alta de agosto (Melany Mariel Torres Gudiño) en el histórico de membresías.
+
+
+## V24
+- La diapositiva comercial de cierres por mes ahora se alimenta automáticamente de la hoja `CIERRES 2026` del archivo operativo.
+- Al actualizar Seguimiento Operativo, se actualizan la gráfica mensual, el listado del mes actual y el listado del mes anterior.
+- El detalle muestra mes, director, financiera, broker, cliente y monto.
