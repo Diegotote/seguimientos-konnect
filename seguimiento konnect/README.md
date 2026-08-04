@@ -61,3 +61,10 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - El comparativo toma exactamente el mes calendario anterior.
 - El título y contador superior de dispersiones se actualizan dinámicamente.
 - Se cambió la clave local de almacenamiento para evitar que sobrevivan datos viejos de julio.
+
+
+## V26
+- La diapositiva comercial “Cierres de membresías por mes” ahora lee exclusivamente la hoja CIERRES 2026 del archivo comercial.
+- Reconoce bloques mensuales de marzo a agosto con encabezados tipo Titular, Oficina, Correo, Teléfono, Región y Membresía.
+- Ya no reutiliza los cierres del archivo operativo ni los totales enero-marzo.
+- Se renovó la clave de almacenamiento local para evitar datos heredados.

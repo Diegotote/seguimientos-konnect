@@ -2,7 +2,7 @@
 import * as XLSX from "xlsx";
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v25_data";
+const STORAGE_KEY = "konnect_dashboard_v26_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -872,9 +872,87 @@ function buildDirectorScope(prospects, targetName) {
   };
 }
 
+
+function parseCommercialClosures2026Rows(rows) {
+  const parsed = [];
+  let currentMonthIndex = null;
+  let currentMonthName = "";
+  let currentYear = new Date().getFullYear();
+  let headerMap = null;
+
+  const monthPattern = /(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)/;
+
+  (rows || []).forEach(row => {
+    const values = (row || []).map(value => String(value ?? "").trim());
+    const normalized = values.map(normalizeText);
+    const firstNonEmptyIndex = normalized.findIndex(Boolean);
+    const firstValue = firstNonEmptyIndex >= 0 ? normalized[firstNonEmptyIndex] : "";
+    const monthMatch = firstValue.match(monthPattern);
+
+    // Reconoce encabezados de sección como "MARZO", "CIERRES MARZO 2026"
+    // o "CIERRE DE MARZO" sin confundirlos con filas de datos.
+    if (monthMatch && normalized.filter(Boolean).length <= 2) {
+      currentMonthName = monthMatch[1];
+      currentMonthIndex = MONTHS.findIndex(month => normalizeText(month) === currentMonthName);
+      const yearMatch = firstValue.match(/(20\d{2})/);
+      if (yearMatch) currentYear = Number(yearMatch[1]);
+      headerMap = null;
+      return;
+    }
+
+    const potentialHeaders = mapHeaders(values);
+    const nameHeader = findHeaderIndex(potentialHeaders, ["TITULAR", "NOMBRE", "CLIENTE", "SOCIO"]);
+    const officeHeader = findHeaderIndex(potentialHeaders, ["OFICINA", "CONSULTORIA", "BROKER"]);
+    const emailHeader = findHeaderIndex(potentialHeaders, ["CORREO", "EMAIL"]);
+    const phoneHeader = findHeaderIndex(potentialHeaders, ["TELEFONO", "CELULAR"]);
+    const regionHeader = findHeaderIndex(potentialHeaders, ["REGION", "LOCALIDAD", "ZONA"]);
+    const membershipHeader = findHeaderIndex(potentialHeaders, ["MEMBRESIA", "PROGRAMA"]);
+
+    if (nameHeader >= 0 && (officeHeader >= 0 || membershipHeader >= 0 || emailHeader >= 0)) {
+      headerMap = {
+        name: nameHeader,
+        office: officeHeader,
+        email: emailHeader,
+        phone: phoneHeader,
+        region: regionHeader,
+        membership: membershipHeader
+      };
+      return;
+    }
+
+    if (currentMonthIndex == null || !headerMap) return;
+
+    const name = values[headerMap.name] || "";
+    const office = headerMap.office >= 0 ? values[headerMap.office] : "";
+    const email = headerMap.email >= 0 ? values[headerMap.email] : "";
+    const phone = headerMap.phone >= 0 ? values[headerMap.phone] : "";
+    const region = headerMap.region >= 0 ? values[headerMap.region] : "";
+    const membership = headerMap.membership >= 0 ? values[headerMap.membership] : "";
+
+    if (!name || normalizeText(name).includes("TOTAL")) return;
+    if (!office && !email && !membership) return;
+
+    parsed.push({
+      month: MONTHS[currentMonthIndex],
+      monthIndex: currentMonthIndex,
+      year: currentYear,
+      name,
+      office: office || "—",
+      email,
+      phone,
+      region: region || "—",
+      membership: membership || "KONNECT EVOLUCIONA"
+    });
+  });
+
+  return parsed;
+}
+
 function parseCommercialWorkbook(workbook) {
   const rows = sheetRows(workbook, "PROSPECTOS MEMBRESIAS");
+  const closureRows = sheetRows(workbook, "CIERRES 2026");
   if (!rows) throw new Error("El archivo debe contener la hoja PROSPECTOS MEMBRESIAS.");
+  const closures2026 = closureRows ? parseCommercialClosures2026Rows(closureRows) : [];
 
   const headerRow = rows.findIndex(row => normalizeText(row?.[0]) === "NOMBRE" && normalizeText(row?.[7]).includes("ESTATUS"));
   if (headerRow < 0) throw new Error("No pude localizar los encabezados comerciales.");
@@ -997,10 +1075,10 @@ function parseCommercialWorkbook(workbook) {
     cierres_transcurridos: {
       title: "Cierres de meses transcurridos",
       columns: ["Mes", "Titular", "Oficina", "Región", "Membresía", "Estatus"],
-      rows: HISTORICAL_MEMBERSHIP_CLOSINGS.map(row => [row.month, row.name, row.office, row.region, row.membership, "CERRADO"]),
+      rows: (closures2026.length ? closures2026 : HISTORICAL_MEMBERSHIP_CLOSINGS).map(row => [row.month, row.name, row.office, row.region, row.membership, "CERRADO"]),
       summary: [
-        { label: "Cierres", value: formatNumber(HISTORICAL_MEMBERSHIP_CLOSINGS.length) },
-        { label: "Meses", value: formatNumber(new Set(HISTORICAL_MEMBERSHIP_CLOSINGS.map(row => row.month)).size) }
+        { label: "Cierres", value: formatNumber((closures2026.length ? closures2026 : HISTORICAL_MEMBERSHIP_CLOSINGS).length) },
+        { label: "Meses", value: formatNumber(new Set((closures2026.length ? closures2026 : HISTORICAL_MEMBERSHIP_CLOSINGS).map(row => row.month)).size) }
       ]
     },
     diego_propias: ownScopeView(directorScopes.diego, "Diego"),
@@ -1025,7 +1103,8 @@ function parseCommercialWorkbook(workbook) {
     nextCloseYear,
     currentClosings,
     nextClosings,
-    historicalMembershipClosings: HISTORICAL_MEMBERSHIP_CLOSINGS,
+    historicalMembershipClosings: closures2026.length ? closures2026 : HISTORICAL_MEMBERSHIP_CLOSINGS,
+    closures2026,
     directorScopes,
     views
   };
@@ -1493,7 +1572,7 @@ function updateCommercialVisual(data) {
 
   renderDirectorScopeSlide(data);
   renderMonthClosingSlide("com-02", data.currentClosings || [], data.currentCloseMonthIndex ?? new Date().getMonth(), data.currentCloseYear ?? new Date().getFullYear());
-  renderHistoricalClosingsSlide(app.closures2026 || data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS);
+  renderHistoricalClosingsSlide(data.closures2026?.length ? data.closures2026 : (data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS));
   renderMonthClosingSlide("com-03", data.nextClosings || [], data.nextCloseMonthIndex ?? ((new Date().getMonth() + 1) % 12), data.nextCloseYear ?? new Date().getFullYear());
 
   const topLocation = entriesSorted(data.locationsOpen || {})[0] || ["Sin localidad", 0];
@@ -1536,7 +1615,12 @@ function applyPayload(payload, persist = true) {
       };
     }
   }
-  if (payload.type === "commercial") updateCommercialVisual(payload);
+  if (payload.type === "commercial") {
+    if (Array.isArray(payload.closures2026) && payload.closures2026.length) {
+      app.closures2026 = payload.closures2026;
+    }
+    updateCommercialVisual(payload);
+  }
   if (persist) {
     const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     existing[payload.type] = payload;
