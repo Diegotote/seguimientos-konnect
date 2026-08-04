@@ -2,7 +2,7 @@
 import * as XLSX from "xlsx";
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v20_data";
+const STORAGE_KEY = "konnect_dashboard_v25_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -602,10 +602,16 @@ function parseOperationalWorkbook(workbook) {
 
   const dated = pipeline.filter(row => row.date);
   const latestDate = dated.sort((a, b) => b.date - a.date)[0]?.date || new Date();
+  // El periodo operativo se rige por el mes calendario actual, no por la fecha
+  // más reciente del archivo. Así, al iniciar agosto, las altas de julio ya no
+  // permanecen dentro de Viabilidad ni de las demás etapas del periodo vigente.
+  const reportingDate = new Date();
+  const reportingMonth = reportingDate.getMonth();
+  const reportingYear = reportingDate.getFullYear();
   const currentRows = pipeline.filter(row =>
     row.date &&
-    row.date.getFullYear() === latestDate.getFullYear() &&
-    row.date.getMonth() === latestDate.getMonth()
+    row.date.getFullYear() === reportingYear &&
+    row.date.getMonth() === reportingMonth
   );
 
   const projection = parseProjectionSheet(projectionRows);
@@ -638,8 +644,13 @@ function parseOperationalWorkbook(workbook) {
   const dispersionByFinancial = moneyBy(projection.dispersions, x => x.financial, x => x.amount);
   const dispersionCountByFinancial = countBy(projection.dispersions, x => normalizeText(x.financial) || 'Sin financiera');
 
-  const previousHistory = historical.filter(x => x.monthIndex < (projection.periodMonth ?? latestDate.getMonth())).at(-1) || historical.at(-1);
-  const previousAmount = previousHistory?.amount || 0;
+  const previousMonthIndex = (reportingMonth + 11) % 12;
+  const previousHistory = historical.find(x => x.monthIndex === previousMonthIndex) || {
+    monthIndex: previousMonthIndex,
+    label: MONTH_LABELS[previousMonthIndex],
+    amount: 0
+  };
+  const previousAmount = previousHistory.amount || 0;
   const previousProgress = target ? previousAmount / target * 100 : 0;
 
   const tableRow = x => [
@@ -742,13 +753,13 @@ function parseOperationalWorkbook(workbook) {
   return {
     type: "operational",
     importedAt: new Date().toISOString(),
-    periodMonth: projection.periodMonth ?? latestDate.getMonth(),
-    periodYear: projection.periodYear ?? latestDate.getFullYear(),
+    periodMonth: reportingMonth,
+    periodYear: reportingYear,
     target,
     dispersed,
     missing,
     progress,
-    financialCommentActivity: buildFinancialCommentActivity(pipeline, latestDate),
+    financialCommentActivity: buildFinancialCommentActivity(pipeline, reportingDate),
     closures2026,
     historical,
     previousHistory,
@@ -1125,6 +1136,15 @@ function updateHistory(data) {
 }
 
 function updateOperationalVisual(data) {
+  const currentMonthName = MONTHS[data.periodMonth] || "PERIODO ACTUAL";
+  const currentMonthTitle = currentMonthName.charAt(0) + currentMonthName.slice(1).toLowerCase();
+  const dispersionTitle = $("#op-05 .slide-title");
+  if (dispersionTitle) dispersionTitle.textContent = `Dispersiones del mes de ${currentMonthTitle} hasta el corte`;
+  const dispersionChip = $("#op-05 .top-chip");
+  if (dispersionChip) dispersionChip.textContent = `${formatNumber(data.projection.dispersions.length)} operaciones · corte actual`;
+  const currentCompareLabel = $("#op-01 .compare-pct-box:nth-child(2) .eyebrow");
+  if (currentCompareLabel) currentCompareLabel.textContent = currentMonthTitle;
+
   setMetric("op-01", "Meta mensual", formatMoney(data.target));
   setMetric("op-01", "Dispersión actual", formatMoney(data.dispersed), `${data.projection.dispersions.length} operaciones confirmadas.`);
   setMetric("op-01", "Faltante", formatMoney(data.missing));

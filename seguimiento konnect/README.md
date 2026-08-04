@@ -53,3 +53,11 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - La diapositiva comercial de cierres por mes ahora se alimenta automáticamente de la hoja `CIERRES 2026` del archivo operativo.
 - Al actualizar Seguimiento Operativo, se actualizan la gráfica mensual, el listado del mes actual y el listado del mes anterior.
 - El detalle muestra mes, director, financiera, broker, cliente y monto.
+
+
+## V25
+- Viabilidad y las demás etapas del pipeline se filtran por el mes calendario actual.
+- En agosto ya no arrastra operaciones fechadas en julio.
+- El comparativo toma exactamente el mes calendario anterior.
+- El título y contador superior de dispersiones se actualizan dinámicamente.
+- Se cambió la clave local de almacenamiento para evitar que sobrevivan datos viejos de julio.
