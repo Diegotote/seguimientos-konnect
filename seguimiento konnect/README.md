@@ -42,3 +42,8 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - La tabla de cobertura ahora muestra únicamente: financiera, ops. totales, ops. comentadas y cobertura.
 - Se eliminó la diapositiva “Integración · Motivos de detención”.
 - La diapositiva de actividad en plataforma se colocó antes de la lámina final de agradecimiento.
+
+
+## V23
+- Actualizada la diapositiva comercial de cierres históricos con nueva lectura visual (gráfica vertical + cierres de agosto y julio).
+- Integrada la nueva alta de agosto (Melany Mariel Torres Gudiño) en el histórico de membresías.
