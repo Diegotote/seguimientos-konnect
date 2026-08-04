@@ -16,3 +16,6 @@ SUBE ESTOS ARCHIVOS Y CARPETAS A LA RAÍZ DEL REPOSITORIO:
 NO SUBAS LOS ARCHIVOS DE dist/assets A LA RAÍZ.
 NO RENOMBRES package.json COMO vercel.json.
 NO SUBAS la carpeta contenedora, solo su contenido.
+
+
+Actualización V22: vuelve a subir index.html y, si usarás actualización dinámica, el archivo dist/assets/updater-v20.js y src/updater.js dentro del repositorio completo.

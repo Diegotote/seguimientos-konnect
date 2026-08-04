@@ -152,17 +152,34 @@ function renderFinancialCommentActivity(activity) {
 
   const donutHost = $(".finance-donut-host", section);
   if (donutHost) {
-    donutHost.innerHTML = buildDonut(
-      activity.withComments.map(item => ({ name: item.name, value: item.comments })),
-      formatNumber(activity.totalComments),
-      "Comentarios financieros",
-      250,
-      true
-    );
+    const colors = ["#19d6e2", "#3db7ff", "#6b74ff", "#8f5cff", "#12a7ff", "#3df0c7", "#725cff"];
+    const legendRows = activity.withComments.map((item, index) => `
+      <div class="finance-legend-row">
+        <span class="dot" style="background:${colors[index % colors.length]}"></span>
+        <div>
+          <div class="finance-legend-title">Financiera</div>
+          <div class="finance-legend-name">${escapeHtml(item.name)}</div>
+        </div>
+        <div class="finance-legend-meta">${formatNumber(item.commentedOperations)} ops.</div>
+      </div>
+    `).join("");
+
+    donutHost.innerHTML = `
+      <div class="finance-donut-stack">
+        ${buildDonut(
+          activity.withComments.map(item => ({ name: item.name, value: item.comments })),
+          formatNumber(activity.totalComments),
+          "Comentarios financieros",
+          250,
+          false
+        )}
+        <div class="finance-legend-list">${legendRows}</div>
+      </div>
+    `;
   }
 
   const commentTotal = $(".finance-comment-total", section);
-  if (commentTotal) commentTotal.textContent = `${formatNumber(activity.totalComments)} comentarios financieros`;
+  if (commentTotal) commentTotal.textContent = `${formatNumber(activity.commentingFinancials)} financieras`;
 
   const commentBody = $(".finance-commented-table tbody", section);
   if (commentBody) {
@@ -172,7 +189,6 @@ function renderFinancialCommentActivity(activity) {
         <td class="num">${formatNumber(item.totalOperations)}</td>
         <td class="num">${formatNumber(item.commentedOperations)}</td>
         <td class="num"><span class="finance-coverage-chip ${financialCoverageTone(item.coverage)}">${formatPercent(item.coverage)}</span></td>
-        <td class="num">${formatNumber(item.comments)}</td>
       </tr>
     `).join("");
   }

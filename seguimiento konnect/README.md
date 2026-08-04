@@ -35,3 +35,10 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - Lado izquierdo: gráfica de pastel con las financieras que sí comentaron y su desglose.
 - Lado derecho superior: tabla de cobertura por financiera con operaciones totales, operaciones comentadas, cobertura y comentarios.
 - Lado derecho inferior: tabla de financieras sin comentarios y sus operaciones activas.
+
+
+## V22
+- Se reacomodó la diapositiva de actividad en plataforma: dona arriba y listado de ops. comentadas abajo.
+- La tabla de cobertura ahora muestra únicamente: financiera, ops. totales, ops. comentadas y cobertura.
+- Se eliminó la diapositiva “Integración · Motivos de detención”.
+- La diapositiva de actividad en plataforma se colocó antes de la lámina final de agradecimiento.
