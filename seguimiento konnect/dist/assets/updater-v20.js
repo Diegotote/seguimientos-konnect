@@ -1,7 +1,8 @@
 
 const XLSX = window.XLSX;
+
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v26_data";
+const STORAGE_KEY = "konnect_dashboard_v27_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -556,6 +557,140 @@ function parseClosures2026Rows(rows) {
   return parsed;
 }
 
+function buildOperationalTableViews(stageRows, projectionRows = []) {
+  const tableRow = x => [
+    x.dateDisplay || "",
+    x.folio || "",
+    x.client || "",
+    x.broker || "",
+    x.financial || "",
+    x.product || "",
+    formatMoney(x.requested || 0),
+    x.comment || ""
+  ];
+  const integrationTableRow = x => [
+    x.dateDisplay || "",
+    x.folio || "",
+    x.client || "",
+    x.financial || "",
+    x.product || "",
+    formatMoney(x.requested || 0),
+    classifyBlocker(x.comment)
+  ];
+  const finalTableRow = x => [
+    x.dateDisplay || "",
+    x.folio || "",
+    x.client || "",
+    x.financial || "",
+    x.product || "",
+    formatMoney(x.requested || 0),
+    formatMoney(x.granted || 0)
+  ];
+
+  return {
+    viabilidad: {
+      title: "Operaciones en Viabilidad",
+      columns: ["Fecha", "Folio", "Cliente", "Consultoría", "Financiera", "Producto", "Monto solicitado", "Comentario"],
+      rows: stageRows["Viabilidad"].rows.map(tableRow),
+      summary: [
+        { label: "Operaciones", value: formatNumber(stageRows["Viabilidad"].count) },
+        { label: "Monto solicitado", value: formatMoney(stageRows["Viabilidad"].requested) }
+      ]
+    },
+    integracion: {
+      title: "Operaciones en Integración",
+      columns: ["Fecha", "Folio", "Cliente", "Financiera", "Producto", "Monto solicitado", "Motivo"],
+      rows: stageRows["Integración"].rows.map(integrationTableRow),
+      summary: [
+        { label: "Operaciones", value: formatNumber(stageRows["Integración"].count) },
+        { label: "Monto solicitado", value: formatMoney(stageRows["Integración"].requested) }
+      ]
+    },
+    analisis: {
+      title: "Operaciones en Análisis",
+      columns: ["Fecha", "Folio", "Cliente", "Consultoría", "Financiera", "Producto", "Monto solicitado", "Comentario"],
+      rows: stageRows["Análisis"].rows.map(tableRow),
+      summary: [
+        { label: "Operaciones", value: formatNumber(stageRows["Análisis"].count) },
+        { label: "Monto solicitado", value: formatMoney(stageRows["Análisis"].requested) }
+      ]
+    },
+    autorizacion: {
+      title: "Operaciones en Autorización",
+      columns: ["Fecha", "Folio", "Cliente", "Financiera", "Producto", "Monto solicitado", "Monto otorgado"],
+      rows: stageRows["Autorización"].rows.map(finalTableRow),
+      summary: [
+        { label: "Operaciones", value: formatNumber(stageRows["Autorización"].count) },
+        { label: "Monto solicitado", value: formatMoney(stageRows["Autorización"].requested) },
+        { label: "Monto otorgado", value: formatMoney(stageRows["Autorización"].granted) }
+      ]
+    },
+    formalizacion: {
+      title: "Operaciones en Formalización",
+      columns: ["Fecha", "Folio", "Cliente", "Financiera", "Producto", "Monto solicitado", "Monto otorgado"],
+      rows: stageRows["Formalización"].rows.map(finalTableRow),
+      summary: [
+        { label: "Operaciones", value: formatNumber(stageRows["Formalización"].count) },
+        { label: "Monto solicitado", value: formatMoney(stageRows["Formalización"].requested) },
+        { label: "Monto otorgado", value: formatMoney(stageRows["Formalización"].granted) }
+      ]
+    },
+    proyeccion: {
+      title: "Operaciones en Proyección",
+      columns: ["Cliente", "Financiera", "Broker / Consultoría", "Monto"],
+      rows: projectionRows.map(x => [x.client, x.financial, x.broker, formatMoney(x.amount)]),
+      summary: [
+        { label: "Operaciones", value: formatNumber(projectionRows.length) },
+        { label: "Potencial", value: formatMoney(sumBy(projectionRows, x => x.amount)) }
+      ]
+    },
+    dispersion: {
+      title: "Operaciones en Dispersión",
+      columns: ["Cliente", "Financiera", "Broker / Consultoría", "Monto dispersado"],
+      rows: stageRows["Dispersión"].rows.map(x => [x.client, x.financial, x.broker, formatMoney(x.amount || x.granted || x.requested || 0)]),
+      summary: [
+        { label: "Operaciones", value: formatNumber(stageRows["Dispersión"].count) },
+        { label: "Monto dispersado", value: formatMoney(stageRows["Dispersión"].requested) }
+      ]
+    }
+  };
+}
+
+function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, year, projectionRows = []) {
+  const currentRows = (pipelineRows || []).filter(row =>
+    row.date && row.date.getFullYear() === year && row.date.getMonth() === monthIndex
+  );
+  const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización"];
+  const stages = {};
+  stageNames.forEach(stage => {
+    const rows = currentRows.filter(row => row.status === stage);
+    stages[stage] = {
+      rows,
+      count: rows.length,
+      requested: sumBy(rows, x => x.requested),
+      granted: sumBy(rows, x => x.granted)
+    };
+  });
+
+  const dispersionRows = (closures2026 || []).filter(row => row.year === year && row.monthIndex === monthIndex);
+  stages["Dispersión"] = {
+    rows: dispersionRows,
+    count: dispersionRows.length,
+    requested: sumBy(dispersionRows, x => x.amount),
+    granted: sumBy(dispersionRows, x => x.amount)
+  };
+
+  return {
+    key: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
+    monthIndex,
+    year,
+    label: `${MONTHS[monthIndex]} ${year}`,
+    stages,
+    integrationBlockers: countBy(stages["Integración"].rows, x => classifyBlocker(x.comment)),
+    views: buildOperationalTableViews(stages, projectionRows)
+  };
+}
+
 function parseOperationalWorkbook(workbook) {
   const pipelineRows = sheetRows(workbook, "PIPELINE");
   const projectionRows = sheetRows(workbook, "PROYECCIÓN") || sheetRows(workbook, "PROYECCION");
@@ -601,18 +736,6 @@ function parseOperationalWorkbook(workbook) {
 
   const dated = pipeline.filter(row => row.date);
   const latestDate = dated.sort((a, b) => b.date - a.date)[0]?.date || new Date();
-  // El periodo operativo se rige por el mes calendario actual, no por la fecha
-  // más reciente del archivo. Así, al iniciar agosto, las altas de julio ya no
-  // permanecen dentro de Viabilidad ni de las demás etapas del periodo vigente.
-  const reportingDate = new Date();
-  const reportingMonth = reportingDate.getMonth();
-  const reportingYear = reportingDate.getFullYear();
-  const currentRows = pipeline.filter(row =>
-    row.date &&
-    row.date.getFullYear() === reportingYear &&
-    row.date.getMonth() === reportingMonth
-  );
-
   const projection = parseProjectionSheet(projectionRows);
   const historical = parseHistoricalClosings(closureRows);
   const target = projection.target || 65000000;
@@ -620,25 +743,31 @@ function parseOperationalWorkbook(workbook) {
   const missing = Math.max(0, target - dispersed);
   const progress = target ? dispersed / target * 100 : 0;
 
-  const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización"];
-  const stages = {};
-  stageNames.forEach(stage => {
-    const rows = currentRows.filter(row => row.status === stage);
-    stages[stage] = {
-      rows,
-      count: rows.length,
-      requested: sumBy(rows, x => x.requested),
-      granted: sumBy(rows, x => x.granted)
-    };
-  });
-  stages["Dispersión"] = {
-    rows: projection.dispersions,
-    count: projection.dispersions.length,
-    requested: dispersed,
-    granted: dispersed
-  };
+  const reportingDate = new Date();
+  const reportingMonth = reportingDate.getMonth();
+  const reportingYear = reportingDate.getFullYear();
+  const currentSummary = buildOperationalPeriodSummary(pipeline, closures2026, reportingMonth, reportingYear, projection.projection);
+  const stages = currentSummary.stages;
+  const integrationBlockers = currentSummary.integrationBlockers;
+  const views = currentSummary.views;
 
-  const integrationBlockers = countBy(stages["Integración"].rows, x => classifyBlocker(x.comment));
+  const periodRegistry = new Map();
+  pipeline.forEach(row => {
+    if (!row.date) return;
+    const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
+    if (!periodRegistry.has(key)) periodRegistry.set(key, { monthIndex: row.date.getMonth(), year: row.date.getFullYear() });
+  });
+  closures2026.forEach(row => {
+    const key = `${row.year}-${String(row.monthIndex + 1).padStart(2, "0")}`;
+    if (!periodRegistry.has(key)) periodRegistry.set(key, { monthIndex: row.monthIndex, year: row.year });
+  });
+
+  const periodSummaries = [...periodRegistry.values()]
+    .sort((a, b) => (b.year - a.year) || (b.monthIndex - a.monthIndex))
+    .map(period => buildOperationalPeriodSummary(pipeline, closures2026, period.monthIndex, period.year, projection.projection));
+
+  const latestPeriodKey = periodSummaries[0]?.key || currentSummary.key;
+
   const projectionByFinancial = moneyBy(projection.projection, x => x.financial, x => x.amount);
   const dispersionByFinancial = moneyBy(projection.dispersions, x => x.financial, x => x.amount);
   const dispersionCountByFinancial = countBy(projection.dispersions, x => normalizeText(x.financial) || 'Sin financiera');
@@ -651,103 +780,6 @@ function parseOperationalWorkbook(workbook) {
   };
   const previousAmount = previousHistory.amount || 0;
   const previousProgress = target ? previousAmount / target * 100 : 0;
-
-  const tableRow = x => [
-    x.dateDisplay || "",
-    x.folio || "",
-    x.client || "",
-    x.broker || "",
-    x.financial || "",
-    x.product || "",
-    formatMoney(x.requested || 0),
-    x.comment || ""
-  ];
-  const integrationTableRow = x => [
-    x.dateDisplay || "",
-    x.folio || "",
-    x.client || "",
-    x.financial || "",
-    x.product || "",
-    formatMoney(x.requested || 0),
-    classifyBlocker(x.comment)
-  ];
-  const finalTableRow = x => [
-    x.dateDisplay || "",
-    x.folio || "",
-    x.client || "",
-    x.financial || "",
-    x.product || "",
-    formatMoney(x.requested || 0),
-    formatMoney(x.granted || 0)
-  ];
-
-  const views = {
-    viabilidad: {
-      title: "Operaciones en Viabilidad",
-      columns: ["Fecha", "Folio", "Cliente", "Consultoría", "Financiera", "Producto", "Monto solicitado", "Comentario"],
-      rows: stages["Viabilidad"].rows.map(tableRow),
-      summary: [
-        { label: "Operaciones", value: formatNumber(stages["Viabilidad"].count) },
-        { label: "Monto solicitado", value: formatMoney(stages["Viabilidad"].requested) }
-      ]
-    },
-    integracion: {
-      title: "Operaciones en Integración",
-      columns: ["Fecha", "Folio", "Cliente", "Financiera", "Producto", "Monto solicitado", "Motivo"],
-      rows: stages["Integración"].rows.map(integrationTableRow),
-      summary: [
-        { label: "Operaciones", value: formatNumber(stages["Integración"].count) },
-        { label: "Monto solicitado", value: formatMoney(stages["Integración"].requested) }
-      ]
-    },
-    analisis: {
-      title: "Operaciones en Análisis",
-      columns: ["Fecha", "Folio", "Cliente", "Consultoría", "Financiera", "Producto", "Monto solicitado", "Comentario"],
-      rows: stages["Análisis"].rows.map(tableRow),
-      summary: [
-        { label: "Operaciones", value: formatNumber(stages["Análisis"].count) },
-        { label: "Monto solicitado", value: formatMoney(stages["Análisis"].requested) }
-      ]
-    },
-    autorizacion: {
-      title: "Operaciones en Autorización",
-      columns: ["Fecha", "Folio", "Cliente", "Financiera", "Producto", "Monto solicitado", "Monto otorgado"],
-      rows: stages["Autorización"].rows.map(finalTableRow),
-      summary: [
-        { label: "Operaciones", value: formatNumber(stages["Autorización"].count) },
-        { label: "Monto solicitado", value: formatMoney(stages["Autorización"].requested) },
-        { label: "Monto otorgado", value: formatMoney(stages["Autorización"].granted) }
-      ]
-    },
-    formalizacion: {
-      title: "Operaciones en Formalización",
-      columns: ["Fecha", "Folio", "Cliente", "Financiera", "Producto", "Monto solicitado", "Monto otorgado"],
-      rows: stages["Formalización"].rows.map(finalTableRow),
-      summary: [
-        { label: "Operaciones", value: formatNumber(stages["Formalización"].count) },
-        { label: "Monto solicitado", value: formatMoney(stages["Formalización"].requested) },
-        { label: "Monto otorgado", value: formatMoney(stages["Formalización"].granted) }
-      ]
-    },
-    proyeccion: {
-      title: "Operaciones en Proyección",
-      columns: ["Cliente", "Financiera", "Broker / Consultoría", "Monto"],
-      rows: projection.projection.map(x => [x.client, x.financial, x.broker, formatMoney(x.amount)]),
-      summary: [
-        { label: "Operaciones", value: formatNumber(projection.projection.length) },
-        { label: "Potencial", value: formatMoney(sumBy(projection.projection, x => x.amount)) }
-      ]
-    },
-    dispersion: {
-      title: "Operaciones en Dispersión",
-      columns: ["Cliente", "Financiera", "Broker / Consultoría", "Monto dispersado"],
-      rows: projection.dispersions.map(x => [x.client, x.financial, x.broker, formatMoney(x.amount)]),
-      summary: [
-        { label: "Operaciones", value: formatNumber(projection.dispersions.length) },
-        { label: "Monto dispersado", value: formatMoney(dispersed) }
-      ]
-    }
-  };
 
   return {
     type: "operational",
@@ -770,7 +802,9 @@ function parseOperationalWorkbook(workbook) {
     projectionByFinancial,
     dispersionByFinancial,
     dispersionCountByFinancial,
-    views
+    views,
+    periodSummaries,
+    latestPeriodKey
   };
 }
 
@@ -1213,6 +1247,161 @@ function updateHistory(data) {
   `;
 }
 
+function ensureOperationalPeriodUI() {
+  if (!document.getElementById("operationalPeriodStyles")) {
+    const style = document.createElement("style");
+    style.id = "operationalPeriodStyles";
+    style.textContent = `
+      .period-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,10,24,.72);backdrop-filter:blur(10px);z-index:45;padding:24px}
+      .period-overlay.visible{display:flex}
+      .period-modal{width:min(560px,94vw);border-radius:30px;padding:28px;background:linear-gradient(145deg,rgba(10,20,38,.98),rgba(15,31,63,.98));border:1px solid rgba(106,151,255,.22);box-shadow:0 34px 90px rgba(0,0,0,.42);color:#eff6ff}
+      .period-modal h3{margin:6px 0 10px;font-size:30px;line-height:1.05;letter-spacing:-.03em}
+      .period-modal p{margin:0 0 18px;color:#afbdd8;font-size:15px}
+      .period-list{display:grid;grid-template-columns:1fr;gap:10px;max-height:52vh;overflow:auto}
+      .period-option{width:100%;text-align:left;padding:16px 18px;border-radius:18px;border:1px solid rgba(110,150,255,.16);background:rgba(255,255,255,.03);color:#eff6ff;display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;transition:.2s ease}
+      .period-option:hover{border-color:rgba(68,221,255,.55);transform:translateY(-1px)}
+      .period-option.active{background:linear-gradient(135deg,rgba(16,39,86,.9),rgba(11,28,66,.9));border-color:rgba(68,221,255,.66);box-shadow:0 0 0 1px rgba(68,221,255,.14) inset}
+      .period-option strong{display:block;font-size:17px}
+      .period-option small{display:block;color:#9fb3d3;font-size:12px;margin-top:4px}
+      .period-option .period-badge{font-size:12px;color:#7ee7ff;background:rgba(126,231,255,.1);border:1px solid rgba(126,231,255,.2);padding:5px 10px;border-radius:999px;white-space:nowrap}
+      .period-actions{display:flex;justify-content:flex-end;margin-top:18px}
+      .period-close-btn{border:none;border-radius:999px;padding:10px 16px;background:rgba(255,255,255,.08);color:#eff6ff;font-weight:700;cursor:pointer}
+      @media(max-width:760px){.period-modal{padding:22px}.period-modal h3{font-size:24px}.period-option{padding:14px 15px;align-items:flex-start;flex-direction:column}.period-option .period-badge{align-self:flex-start}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  const actions = $("#op-02 .ops-btn-row");
+  if (actions && !document.getElementById("openOperationalPeriodPicker")) {
+    const button = document.createElement("button");
+    button.className = "ops-btn";
+    button.id = "openOperationalPeriodPicker";
+    button.type = "button";
+    button.textContent = "Revisar periodos anteriores";
+    button.addEventListener("click", openOperationalPeriodPicker);
+    actions.appendChild(button);
+  }
+
+  if (!document.getElementById("operationalPeriodOverlay")) {
+    const overlay = document.createElement("div");
+    overlay.id = "operationalPeriodOverlay";
+    overlay.className = "period-overlay";
+    overlay.setAttribute("aria-hidden", "true");
+    overlay.innerHTML = `
+      <div class="period-modal">
+        <div class="eyebrow">Pipeline por periodo</div>
+        <h3>Revisar periodos anteriores</h3>
+        <p>Selecciona el mes que quieres visualizar en la diapositiva de estructura por estatus.</p>
+        <div class="period-list" id="operationalPeriodList"></div>
+        <div class="period-actions">
+          <button class="period-close-btn" id="closeOperationalPeriodPicker" type="button">Cerrar</button>
+        </div>
+      </div>
+    `;
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) closeOperationalPeriodPicker();
+    });
+    document.body.appendChild(overlay);
+    document.getElementById("closeOperationalPeriodPicker")?.addEventListener("click", closeOperationalPeriodPicker);
+  }
+}
+
+function closeOperationalPeriodPicker() {
+  const overlay = document.getElementById("operationalPeriodOverlay");
+  if (!overlay) return;
+  overlay.classList.remove("visible");
+  overlay.setAttribute("aria-hidden", "true");
+}
+
+function openOperationalPeriodPicker() {
+  const data = app.currentOperationalPayload;
+  if (!data) return;
+  ensureOperationalPeriodUI();
+  const overlay = document.getElementById("operationalPeriodOverlay");
+  const list = document.getElementById("operationalPeriodList");
+  if (!overlay || !list) return;
+
+  const periods = data.periodSummaries?.length
+    ? data.periodSummaries
+    : [{ key: data.latestPeriodKey || `${data.periodYear}-${String((data.periodMonth || 0) + 1).padStart(2, "0")}`, monthIndex: data.periodMonth, year: data.periodYear, label: `${MONTHS[data.periodMonth]} ${data.periodYear}`, stages: data.stages, views: data.views }];
+
+  list.innerHTML = periods.map(period => {
+    const totalVisible = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización", "Dispersión"]
+      .reduce((sum, stage) => sum + Number(period.stages?.[stage]?.count || 0), 0);
+    const isActive = period.key === app.activeOperationalPeriodKey;
+    const monthLabel = `${(MONTHS[period.monthIndex] || "PERIODO").charAt(0)}${(MONTHS[period.monthIndex] || "").slice(1).toLowerCase()} ${period.year}`;
+    return `
+      <button class="period-option ${isActive ? "active" : ""}" data-period-key="${period.key}" type="button">
+        <div>
+          <strong>${monthLabel}</strong>
+          <small>${formatNumber(totalVisible)} operaciones visibles en la estructura.</small>
+        </div>
+        <span class="period-badge">${period.label}</span>
+      </button>
+    `;
+  }).join("");
+
+  list.querySelectorAll(".period-option").forEach(button => {
+    button.addEventListener("click", () => {
+      applyOperationalPeriodToSlide(data, button.dataset.periodKey);
+      closeOperationalPeriodPicker();
+    });
+  });
+
+  overlay.classList.add("visible");
+  overlay.setAttribute("aria-hidden", "false");
+}
+
+function applyOperationalPeriodToSlide(data, periodKey = null) {
+  const stageList = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización", "Dispersión"];
+  const fallbackKey = periodKey || data.latestPeriodKey || `${data.periodYear}-${String((data.periodMonth || 0) + 1).padStart(2, "0")}`;
+  const selected = data.periodSummaries?.find(period => period.key === fallbackKey)
+    || data.periodSummaries?.[0]
+    || {
+      key: fallbackKey,
+      monthIndex: data.periodMonth,
+      year: data.periodYear,
+      label: `${MONTHS[data.periodMonth] || "PERIODO"} ${data.periodYear || ""}`,
+      stages: data.stages,
+      integrationBlockers: data.integrationBlockers,
+      views: data.views
+    };
+
+  const maxCount = Math.max(...stageList.map(name => selected.stages?.[name]?.count || 0), 1);
+  $$("#op-02 .status-card").forEach(card => {
+    const name = $(".status-name", card)?.textContent.trim();
+    const stage = selected.stages?.[name];
+    if (!stage) return;
+    $(".status-count", card).textContent = formatNumber(stage.count);
+    $(".status-money", card).textContent = formatMoney(stage.requested);
+    const fill = $(".fill", card);
+    if (fill) fill.style.setProperty("--w", `${(stage.count / maxCount * 100).toFixed(1)}%`);
+  });
+
+  replaceSectionContent(
+    "op-02",
+    "Participación del pipeline",
+    buildDonut(stageList.map(name => ({ name, value: selected.stages?.[name]?.count || 0 })), formatNumber(sumBy(stageList, name => selected.stages?.[name]?.count || 0)), "Operaciones visibles", 280)
+  );
+
+  const periodChip = $("#op-02 .top-chip");
+  if (periodChip) periodChip.textContent = selected.label;
+
+  app.activeOperationalPeriodKey = selected.key;
+  app.currentOperationalPeriod = selected;
+  ["viabilidad", "integracion", "analisis", "autorizacion", "formalizacion", "dispersion"].forEach(key => {
+    if (selected.views?.[key]) app.viewTables[key] = selected.views[key];
+  });
+  if (data.views?.proyeccion) app.viewTables.proyeccion = data.views.proyeccion;
+
+  const activeOpsKey = document.querySelector(".ops-option.active")?.dataset.key;
+  if (activeOpsKey && app.renderOpsTable && app.viewTables[activeOpsKey]) {
+    app.renderOpsTable(activeOpsKey);
+  }
+
+  app.scaleRepeated?.();
+}
+
 function updateOperationalVisual(data) {
   const currentMonthName = MONTHS[data.periodMonth] || "PERIODO ACTUAL";
   const currentMonthTitle = currentMonthName.charAt(0) + currentMonthName.slice(1).toLowerCase();
@@ -1246,22 +1435,9 @@ function updateOperationalVisual(data) {
     if (pct) pct.textContent = formatPercent(data.progress);
   }
 
-  const stageList = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización", "Dispersión"];
-  const maxCount = Math.max(...stageList.map(name => data.stages[name]?.count || 0), 1);
-  $$("#op-02 .status-card").forEach(card => {
-    const name = $(".status-name", card)?.textContent.trim();
-    const stage = data.stages[name];
-    if (!stage) return;
-    $(".status-count", card).textContent = formatNumber(stage.count);
-    $(".status-money", card).textContent = formatMoney(stage.requested);
-    const fill = $(".fill", card);
-    if (fill) fill.style.setProperty("--w", `${(stage.count / maxCount * 100).toFixed(1)}%`);
-  });
-  replaceSectionContent(
-    "op-02",
-    "Participación del pipeline",
-    buildDonut(stageList.map(name => ({ name, value: data.stages[name]?.count || 0 })), formatNumber(sumBy(stageList, name => data.stages[name]?.count || 0)), "Operaciones visibles", 280)
-  );
+  app.currentOperationalPayload = data;
+  ensureOperationalPeriodUI();
+  applyOperationalPeriodToSlide(data, data.latestPeriodKey);
 
   const blockerEntries = entriesSorted(data.integrationBlockers);
   const integration = data.stages["Integración"];
