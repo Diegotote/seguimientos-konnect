@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v33_data";
+const STORAGE_KEY = "konnect_dashboard_v34_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -294,6 +294,21 @@ function parseDate(value) {
     const d = new Date(year, Number(match[2]) - 1, Number(match[1]));
     return Number.isNaN(d.valueOf()) ? null : d;
   }
+
+  // Fechas de la primera columna PIPELINE pueden venir como texto: "8 ago 2026".
+  const monthMap = {
+    ENE: 0, FEB: 1, MAR: 2, ABR: 3, MAY: 4, JUN: 5,
+    JUL: 6, AGO: 7, SEP: 8, OCT: 9, NOV: 10, DIC: 11
+  };
+  const spanish = normalizeText(s).match(/^(\d{1,2})\s+([A-Z]{3,10})\s+(\d{4})$/);
+  if (spanish) {
+    const monthIndex = monthMap[spanish[2].slice(0, 3)];
+    if (monthIndex != null) {
+      const d = new Date(Number(spanish[3]), monthIndex, Number(spanish[1]));
+      return Number.isNaN(d.valueOf()) ? null : d;
+    }
+  }
+
   const d = new Date(s);
   return Number.isNaN(d.valueOf()) ? null : d;
 }
@@ -341,7 +356,11 @@ function parseScheduleTime(value) {
 function formatScheduleTime(value) {
   const d = parseScheduleTime(value);
   if (!d) return String(value ?? "").trim();
-  return d.toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit", hour12: true }).replace("a. m.", "a. m.").replace("p. m.", "p. m.");
+  const hour24 = d.getHours();
+  const minute = String(d.getMinutes()).padStart(2, "0");
+  const meridian = hour24 >= 12 ? "p. m." : "a. m.";
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${minute} ${meridian}`;
 }
 
 function parseWeeklyActivitiesRows(rows) {
@@ -385,10 +404,10 @@ function parseWeeklyActivitiesRows(rows) {
   });
 }
 
-function sheetRows(workbook, name) {
+function sheetRows(workbook, name, raw = true) {
   const exact = workbook.SheetNames.find(n => normalizeText(n) === normalizeText(name));
   if (!exact) return null;
-  return XLSX.utils.sheet_to_json(workbook.Sheets[exact], { header: 1, raw: true, defval: null });
+  return XLSX.utils.sheet_to_json(workbook.Sheets[exact], { header: 1, raw, defval: null });
 }
 
 function mapHeaders(row) {
@@ -798,7 +817,7 @@ function buildOperationalTableViews(stageRows, projectionRows = []) {
 
 function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, year, projectionRows = []) {
   const currentRows = (pipelineRows || []).filter(row =>
-    row.periodDate && row.periodDate.getFullYear() === year && row.periodDate.getMonth() === monthIndex
+    row.date && row.date.getFullYear() === year && row.date.getMonth() === monthIndex
   );
   const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización"];
   const stages = {};
@@ -871,12 +890,10 @@ function parseOperationalWorkbook(workbook) {
     requested: toNumber(row[idx.requested]),
     granted: toNumber(row[idx.granted]),
     comment: cleanText(row[idx.comment], 90),
-    commentDate: formatDate(row[idx.commentDate]),
-    commentDateValue: normalizeOperationalPeriodDate(parseDate(row[idx.commentDate]))
+    commentDate: formatDate(row[idx.commentDate])
   })).map(row => ({
     ...row,
-    date: normalizeOperationalPeriodDate(row.date),
-    periodDate: normalizeOperationalPeriodDate(row.commentDateValue) || normalizeOperationalPeriodDate(row.date)
+    date: normalizeOperationalPeriodDate(row.date)
   })).filter(row => row.client || row.folio || row.status);
 
   const dated = pipeline.filter(row => row.date);
@@ -898,7 +915,7 @@ function parseOperationalWorkbook(workbook) {
 
   const periodRegistry = new Map();
   pipeline.forEach(row => {
-    const date = row.periodDate;
+    const date = row.date;
     if (!date) return;
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     if (!periodRegistry.has(key)) periodRegistry.set(key, { monthIndex: date.getMonth(), year: date.getFullYear() });
@@ -1139,7 +1156,7 @@ function parseCommercialClosures2026Rows(rows) {
 function parseCommercialWorkbook(workbook) {
   const rows = sheetRows(workbook, "PROSPECTOS MEMBRESIAS");
   const closureRows = sheetRows(workbook, "CIERRES 2026");
-  const weeklyRows = sheetRows(workbook, "Actividades Semanales");
+  const weeklyRows = sheetRows(workbook, "Actividades Semanales", false);
   if (!rows) throw new Error("El archivo debe contener la hoja PROSPECTOS MEMBRESIAS.");
   const closures2026 = closureRows ? parseCommercialClosures2026Rows(closureRows) : [];
   const weeklyActivities = weeklyRows ? parseWeeklyActivitiesRows(weeklyRows) : [];
@@ -1718,21 +1735,28 @@ function renderMonthClosingSlide(sectionId, rows, monthIndex, year) {
 function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
   const section = document.getElementById("com-history");
   if (!section) return;
-  const dataRows = (Array.isArray(rows) && rows.length ? rows : HISTORICAL_MEMBERSHIP_CLOSINGS)
+  const sourceRows = Array.isArray(rows) && rows.length ? rows : HISTORICAL_MEMBERSHIP_CLOSINGS;
+  let dataRows = sourceRows
+    .filter(row => Number(row.monthIndex) >= 2 && Number(row.monthIndex) <= 7)
     .slice()
     .sort((a, b) => Number(a.monthIndex || 0) - Number(b.monthIndex || 0));
+  if (!dataRows.length) {
+    dataRows = HISTORICAL_MEMBERSHIP_CLOSINGS
+      .filter(row => Number(row.monthIndex) >= 2 && Number(row.monthIndex) <= 7)
+      .slice()
+      .sort((a, b) => Number(a.monthIndex || 0) - Number(b.monthIndex || 0));
+  }
 
   const monthCountsMap = new Map();
   dataRows.forEach(row => {
     const key = `${Number(row.monthIndex || 0)}|${row.month || "Sin mes"}`;
     monthCountsMap.set(key, (monthCountsMap.get(key) || 0) + 1);
   });
-  const monthEntries = [...monthCountsMap.entries()]
-    .map(([key, value]) => {
-      const [monthIndex, month] = key.split("|");
-      return { monthIndex: Number(monthIndex), month, value };
-    })
-    .sort((a, b) => a.monthIndex - b.monthIndex);
+  const monthEntries = [2, 3, 4, 5, 6, 7].map(monthIndex => {
+    const month = MONTHS[monthIndex];
+    const key = `${monthIndex}|${month}`;
+    return { monthIndex, month, value: monthCountsMap.get(key) || 0 };
+  });
 
   const today = new Date();
   const latestMonthIndex = today.getMonth();
@@ -1987,19 +2011,8 @@ function updateCommercialVisual(data) {
 function applyPayload(payload, persist = true) {
   if (payload.type === "operational") {
     updateOperationalVisual(payload);
-    if (Array.isArray(payload.closures2026)) {
-      app.closures2026 = payload.closures2026;
-      renderHistoricalClosingsSlide(payload.closures2026);
-      app.viewTables.cierres_transcurridos = {
-        title: "Cierres 2026",
-        columns: ["Mes", "Director", "Financiera", "Broker", "Cliente", "Monto"],
-        rows: payload.closures2026.map(row => [row.month, row.director, row.financial, row.broker, row.client, row.amountDisplay]),
-        summary: [
-          { label: "Operaciones cerradas", value: formatNumber(payload.closures2026.length) },
-          { label: "Monto total", value: formatMoney(sumBy(payload.closures2026, row => row.amount)) }
-        ]
-      };
-    }
+    // Los CIERRES 2026 operativos solo alimentan dispersión/histórico operativo.
+    // Nunca deben reemplazar la diapositiva comercial de cierres de membresías.
   }
   if (payload.type === "commercial") {
     if (Array.isArray(payload.closures2026) && payload.closures2026.length) {

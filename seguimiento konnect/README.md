@@ -90,3 +90,11 @@ Esta versión toma V30 como base estable y conserva:
 - La gráfica histórica del inicio operativo regresa a tamaño normal.
 - Metas posteriores muestran solo la meta total, sin números rojos de gap, con scroll interno.
 - Corrección visual: lista de financieras debajo de la gráfica de comentarios.
+
+## V34 · periodos y comercial corregidos
+- PIPELINE: el periodo se determina exclusivamente con la primera columna `FECHA`. `Fecha de comentario` no interviene.
+- Se soportan fechas en español como `8 ago 2026`.
+- Verificación del archivo `KONNECT PIPE (4)`: agosto 2026 tiene 58 registros, incluyendo 51 Viabilidad y 1 Integración.
+- Los CIERRES 2026 operativos ya no pueden sobrescribir la diapositiva comercial de membresías.
+- Cierres comerciales se muestran únicamente de marzo a agosto.
+- Actividades Semanales se leen con el texto formateado de Excel para conservar correctamente a. m. / p. m.
