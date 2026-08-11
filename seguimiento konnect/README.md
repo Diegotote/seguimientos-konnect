@@ -79,3 +79,7 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 
 ## V31.1
 - Corrección de carga de JavaScript en Vercel: `dist/index.html` ahora usa XLSX por CDN y `/assets/updater-v20.js`, por lo que vuelve a funcionar el botón “Actualizar presentaciones”.
+
+
+## V31.2
+- Restaurada la carga local de `xlsx-core.js` antes de `updater-v20.js` en `dist/index.html`. Esto corrige el botón “Actualizar presentaciones” en Vercel sin depender del CDN externo.
