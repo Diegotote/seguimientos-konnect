@@ -98,3 +98,11 @@ Esta versión toma V30 como base estable y conserva:
 - Los CIERRES 2026 operativos ya no pueden sobrescribir la diapositiva comercial de membresías.
 - Cierres comerciales se muestran únicamente de marzo a agosto.
 - Actividades Semanales se leen con el texto formateado de Excel para conservar correctamente a. m. / p. m.
+
+
+## V35 · Panorama comercial enfocado
+- La primera diapositiva comercial ya no usa todos los prospectos de la base.
+- Ahora muestra únicamente el seguimiento abierto de Diego y Jorge: cartera propia + referenciada, sin BAJA, Pagado, Rechazado/No viable ni nombres ya cerrados en histórico.
+- La dona de Estado comercial usa solo Cierre, Desarrollo y Reactivación del foco Diego/Jorge.
+- Las barras de Directores con seguimiento abierto muestran únicamente Diego y Jorge.
+- El botón Ver operaciones del panorama abre solo las operaciones activas de Diego/Jorge y sus desgloses.

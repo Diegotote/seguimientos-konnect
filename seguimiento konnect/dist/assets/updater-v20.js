@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v34_data";
+const STORAGE_KEY = "konnect_dashboard_v35_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -1007,6 +1007,23 @@ function isHistoricalClosedName(value) {
     text.includes("ALEJANDRO VIERA");
 }
 
+function isOpenCommercialFollowUp(row) {
+  if (!row || isBajaCommercialRecord(row)) return false;
+  if (isHistoricalClosedName(row.name)) return false;
+  const bucket = bucketCommercialStatus(row.status);
+  return bucket !== "Pagado" && bucket !== "No viable";
+}
+
+function uniqueProspects(rows) {
+  const seen = new Set();
+  return (rows || []).filter(row => {
+    const key = [normalizeText(row?.name), normalizeText(row?.director), normalizeText(row?.referred), normalizeText(row?.status)].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function hasNoReferral(value) {
   const text = normalizeText(value);
   if (!text) return true;
@@ -1041,7 +1058,7 @@ function buildDirectorScope(prospects, targetName) {
   };
 
   prospects.forEach(row => {
-    if (normalizeText(row.status).includes("BAJA")) return;
+    if (!isOpenCommercialFollowUp(row)) return;
     const directorText = normalizeText(row.director);
     const referredText = normalizeText(row.referred);
     const directorIsTarget = directorText.includes(targetName);
@@ -1210,13 +1227,27 @@ function parseCommercialWorkbook(workbook) {
   const nextCloseMonthIndex = (currentCloseMonthIndex + 1) % 12;
   const currentCloseYear = now.getFullYear();
   const nextCloseYear = currentCloseMonthIndex === 11 ? currentCloseYear + 1 : currentCloseYear;
-  const currentClosings = prospects.filter(row => row.closeMonthIndex === currentCloseMonthIndex && !isHistoricalClosedName(row.name));
-  const nextClosings = prospects.filter(row => row.closeMonthIndex === nextCloseMonthIndex);
+  const currentClosings = prospects.filter(row => row.closeMonthIndex === currentCloseMonthIndex && !isHistoricalClosedName(row.name) && isOpenCommercialFollowUp(row));
+  const nextClosings = prospects.filter(row => row.closeMonthIndex === nextCloseMonthIndex && isOpenCommercialFollowUp(row));
 
   const directorScopes = {
     diego: buildDirectorScope(prospects, "DIEGO"),
     jorge: buildDirectorScope(prospects, "JORGE")
   };
+
+  const focusedProspects = uniqueProspects([
+    ...directorScopes.diego.own,
+    ...directorScopes.diego.referred,
+    ...directorScopes.jorge.own,
+    ...directorScopes.jorge.referred
+  ]).filter(isOpenCommercialFollowUp);
+  const focusedBuckets = countBy(focusedProspects, row => bucketCommercialStatus(row.status));
+  const focusDirectorsOpen = {
+    DIEGO: directorScopes.diego.totalCount,
+    JORGE: directorScopes.jorge.totalCount
+  };
+  const focusProspectKeys = new Set(focusedProspects.map(row => normalizeText(row.name)));
+  const focusCurrentClosings = currentClosings.filter(row => focusProspectKeys.has(normalizeText(row.name)));
 
   const rowForTable = row => [
     row.name,
@@ -1261,7 +1292,18 @@ function parseCommercialWorkbook(workbook) {
   });
 
   const views = {
-    abiertos: makeView("Seguimiento abierto", row => bucketCommercialStatus(row.status) !== "Pagado"),
+    seguimiento_diego_jorge: {
+      title: "Seguimiento abierto · Diego y Jorge",
+      columns: ["Nombre", "Programa / Membresía", "Director", "Localidad", "Estatus", "Teléfono", "Comentario"],
+      rows: focusedProspects.map(rowForTable),
+      summary: [{ label: "Registros", value: formatNumber(focusedProspects.length) }]
+    },
+    abiertos: {
+      title: "Seguimiento abierto · Diego y Jorge",
+      columns: ["Nombre", "Programa / Membresía", "Director", "Localidad", "Estatus", "Teléfono", "Comentario"],
+      rows: focusedProspects.map(rowForTable),
+      summary: [{ label: "Registros", value: formatNumber(focusedProspects.length) }]
+    },
     pagados: makeView("Membresías pagadas", row => bucketCommercialStatus(row.status) === "Pagado"),
     reactivacion: makeView("Prospectos en reactivación", row => bucketCommercialStatus(row.status) === "Reactivación"),
     desarrollo: makeView("Prospectos en desarrollo", row => bucketCommercialStatus(row.status) === "Desarrollo"),
@@ -1270,8 +1312,8 @@ function parseCommercialWorkbook(workbook) {
     prioritarios: {
       title: `Cierres prioritarios de ${MONTHS[currentCloseMonthIndex].toLowerCase()}`,
       columns: ["Nombre", "Programa / Membresía", "Director", "Localidad", "Estatus", "Teléfono", "Comentario"],
-      rows: currentClosings.map(rowForTable),
-      summary: [{ label: "Registros", value: formatNumber(currentClosings.length) }]
+      rows: focusCurrentClosings.map(rowForTable),
+      summary: [{ label: "Registros", value: formatNumber(focusCurrentClosings.length) }]
     },
     cierres_siguiente: {
       title: `Cierres previstos para ${MONTHS[nextCloseMonthIndex].toLowerCase()}`,
@@ -1310,6 +1352,10 @@ function parseCommercialWorkbook(workbook) {
     directorsOpen,
     locationsOpen,
     memberships,
+    focusedProspects,
+    focusedBuckets,
+    focusDirectorsOpen,
+    focusCurrentClosings,
     currentCloseMonthIndex,
     nextCloseMonthIndex,
     currentCloseYear,
@@ -1957,26 +2003,28 @@ function renderDirectorScopeSlide(data) {
 
 
 function updateCommercialVisual(data) {
-  const prospectTotal = data.prospectCount ?? data.prospects?.length ?? 0;
-  const paid = data.buckets?.["Pagado"] || 0;
-  const open = data.openCount ?? data.open?.length ?? 0;
+  const prospectTotal = data.focusedProspects?.length ?? 0;
+  const diegoScope = data.directorScopes?.diego?.totalCount || 0;
+  const jorgeScope = data.directorScopes?.jorge?.totalCount || 0;
+  const open = prospectTotal;
+  const currentFocusClosings = data.focusCurrentClosings?.length || 0;
 
-  setMetric("com-01", "Prospectos totales", formatNumber(prospectTotal));
-  setMetric("com-01", "Pagados", formatNumber(paid));
-  setMetric("com-01", "Seguimiento abierto", formatNumber(open));
-  setMetric("com-01", "Cierre prioritario", formatNumber(data.currentClosings?.length || 0));
+  setMetric("com-01", "Seguimiento abierto", formatNumber(open), "Diego y Jorge activos.");
+  setMetric("com-01", "Diego", formatNumber(diegoScope), "Cartera propia y referenciada.");
+  setMetric("com-01", "Jorge", formatNumber(jorgeScope), "Cartera propia y referenciada.");
+  setMetric("com-01", "Cierre prioritario", formatNumber(currentFocusClosings));
 
   replaceSectionContent(
     "com-01",
     "Estado comercial",
     buildDonut(
-      ["Pagado", "Cierre", "Desarrollo", "Reactivación", "No viable"].map(name => ({ name, value: data.buckets?.[name] || 0 })),
+      ["Cierre", "Desarrollo", "Reactivación"].map(name => ({ name, value: data.focusedBuckets?.[name] || 0 })),
       formatNumber(prospectTotal),
-      "Prospectos considerados",
+      "Seguimiento abierto",
       260
     )
   );
-  replaceSectionContent("com-01", "Directores con seguimiento abierto", buildBars(entriesSorted(data.directorsOpen || {}), false));
+  replaceSectionContent("com-01", "Directores con seguimiento abierto", buildBars(entriesSorted(data.focusDirectorsOpen || {}), false));
 
   renderDirectorScopeSlide(data);
   renderWeeklyActivitiesSlide(data);
@@ -2003,6 +2051,7 @@ function updateCommercialVisual(data) {
   Object.entries(data.views || {}).forEach(([key, value]) => {
     app.viewTables[key] = value;
   });
+  app.viewGroups.panorama_comercial = ["seguimiento_diego_jorge", "prioritarios", "diego_propias", "diego_referenciadas", "jorge_propias", "jorge_referenciadas"];
   app.viewGroups.alcance_directores = ["diego_propias", "diego_referenciadas", "jorge_propias", "jorge_referenciadas"];
   app.viewGroups.actividades_semanales = ["actividades_semanales"];
   app.viewGroups.historial_cierres = ["cierres_transcurridos"];
@@ -2043,10 +2092,10 @@ function showValidation(payload, file) {
   } else {
     items.push(
       ["Archivo", file.name],
-      ["Prospectos considerados", formatNumber(payload.prospects.length)],
+      ["Base comercial filtrada", formatNumber(payload.prospects.length)],
       ["Fuera del alcance", formatNumber(payload.excludedCount || 0)],
-      ["Seguimiento abierto", formatNumber(payload.open.length)],
-      ["Pagados", formatNumber(payload.buckets["Pagado"] || 0)],
+      ["Seguimiento abierto Diego/Jorge", formatNumber(payload.focusedProspects?.length || 0)],
+      ["Cerrados excluidos", formatNumber((payload.buckets["Pagado"] || 0) + (payload.buckets["No viable"] || 0))],
       ["Diego · propias / referidas", `${formatNumber(payload.directorScopes?.diego?.ownCount || 0)} / ${formatNumber(payload.directorScopes?.diego?.referredCount || 0)}`],
       ["Jorge · propias / referidas", `${formatNumber(payload.directorScopes?.jorge?.ownCount || 0)} / ${formatNumber(payload.directorScopes?.jorge?.referredCount || 0)}`],
       [`Cierres ${MONTH_LABELS[payload.currentCloseMonthIndex] || "actual"}`, formatNumber(payload.currentClosings?.length || 0)],
