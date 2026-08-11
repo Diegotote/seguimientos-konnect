@@ -70,7 +70,8 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - Se renovó la clave de almacenamiento local para evitar datos heredados.
 
 
-## V30
-- Se agregó la diapositiva comercial “Actividades de la semana”, alimentada por la hoja `Actividades Semanales`.
-- La diapositiva aparece después de “Diego y Jorge · cartera propia y referenciada”.
-- En alcance de Diego/Jorge ya no se cuentan registros con estatus BAJA.
+## V31
+- Corrección de metas mensuales en inicio operativo.
+- Se agregó/forzó bloque de metas posteriores con gap.
+- La estructura por estatus considera fecha de comentario para capturar actividad del periodo actual.
+- Corrección visual en gráfica de comentarios de financieras.
