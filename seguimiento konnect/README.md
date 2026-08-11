@@ -84,3 +84,9 @@ Esta versión toma V30 como base estable y conserva:
 - Metas operativas agosto-diciembre y gap.
 - Estructura por estatus por periodo real de la hoja PIPELINE, sin mezclar con fechas de comentario.
 - Corrección visual de la gráfica de comentarios de financieras.
+
+## V33
+- Estructura por estatus vuelve a leer el periodo efectivo: usa fecha de comentario válida si existe; si no, usa fecha de alta. El periodo actual se selecciona si existe; si no, usa el último disponible.
+- La gráfica histórica del inicio operativo regresa a tamaño normal.
+- Metas posteriores muestran solo la meta total, sin números rojos de gap, con scroll interno.
+- Corrección visual: lista de financieras debajo de la gráfica de comentarios.

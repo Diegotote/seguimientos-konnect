@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v32_data";
+const STORAGE_KEY = "konnect_dashboard_v33_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -174,18 +174,21 @@ function renderFinancialCommentActivity(activity) {
       </div>
     `).join("");
 
-    donutHost.innerHTML = `
-      <div class="finance-donut-stack">
-        ${buildDonut(
-          activity.withComments.map(item => ({ name: item.name, value: item.commentedOperations })),
-          formatNumber(activity.totalCommentedOperations),
-          "Operaciones comentadas",
-          250,
-          true
-        )}
-        <div class="finance-legend-list">${legendRows}</div>
-      </div>
-    `;
+    donutHost.innerHTML = buildDonut(
+      activity.withComments.map(item => ({ name: item.name, value: item.commentedOperations })),
+      formatNumber(activity.totalCommentedOperations),
+      "Operaciones comentadas",
+      260,
+      true
+    );
+
+    let legend = $(".finance-legend-list", section);
+    if (!legend) {
+      legend = document.createElement("div");
+      legend.className = "finance-legend-list";
+      donutHost.insertAdjacentElement("afterend", legend);
+    }
+    legend.innerHTML = legendRows;
   }
 
   const commentTotal = $(".finance-comment-total", section);
@@ -294,6 +297,15 @@ function parseDate(value) {
   const d = new Date(s);
   return Number.isNaN(d.valueOf()) ? null : d;
 }
+
+function normalizeOperationalPeriodDate(value) {
+  const date = value instanceof Date && !Number.isNaN(value.valueOf()) ? value : null;
+  if (!date) return null;
+  const year = date.getFullYear();
+  if (year < 2024 || year > 2030) return null;
+  return date;
+}
+
 
 function formatDate(value) {
   const d = parseDate(value);
@@ -516,8 +528,8 @@ function renderOperationalFutureTargets(currentMonthIndex, currentAmount) {
           <span>Meta mensual</span>
         </div>
         <div class="future-target-gap">
-          <strong>${gapText}</strong>
-          <span>Gap</span>
+          <strong>${formatMoney(item.target)}</strong>
+          <span>Meta</span>
         </div>
       </div>
     `;
@@ -786,7 +798,7 @@ function buildOperationalTableViews(stageRows, projectionRows = []) {
 
 function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, year, projectionRows = []) {
   const currentRows = (pipelineRows || []).filter(row =>
-    row.date && row.date.getFullYear() === year && row.date.getMonth() === monthIndex
+    row.periodDate && row.periodDate.getFullYear() === year && row.periodDate.getMonth() === monthIndex
   );
   const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización"];
   const stages = {};
@@ -859,7 +871,12 @@ function parseOperationalWorkbook(workbook) {
     requested: toNumber(row[idx.requested]),
     granted: toNumber(row[idx.granted]),
     comment: cleanText(row[idx.comment], 90),
-    commentDate: formatDate(row[idx.commentDate])
+    commentDate: formatDate(row[idx.commentDate]),
+    commentDateValue: normalizeOperationalPeriodDate(parseDate(row[idx.commentDate]))
+  })).map(row => ({
+    ...row,
+    date: normalizeOperationalPeriodDate(row.date),
+    periodDate: normalizeOperationalPeriodDate(row.commentDateValue) || normalizeOperationalPeriodDate(row.date)
   })).filter(row => row.client || row.folio || row.status);
 
   const dated = pipeline.filter(row => row.date);
@@ -881,9 +898,10 @@ function parseOperationalWorkbook(workbook) {
 
   const periodRegistry = new Map();
   pipeline.forEach(row => {
-    if (!row.date) return;
-    const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
-    if (!periodRegistry.has(key)) periodRegistry.set(key, { monthIndex: row.date.getMonth(), year: row.date.getFullYear() });
+    const date = row.periodDate;
+    if (!date) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    if (!periodRegistry.has(key)) periodRegistry.set(key, { monthIndex: date.getMonth(), year: date.getFullYear() });
   });
   closures2026.forEach(row => {
     const key = `${row.year}-${String(row.monthIndex + 1).padStart(2, "0")}`;
@@ -894,7 +912,10 @@ function parseOperationalWorkbook(workbook) {
     .sort((a, b) => (b.year - a.year) || (b.monthIndex - a.monthIndex))
     .map(period => buildOperationalPeriodSummary(pipeline, closures2026, period.monthIndex, period.year, projection.projection));
 
-  const latestPeriodKey = periodSummaries[0]?.key || currentSummary.key;
+  const currentPeriodKey = `${reportingYear}-${String(reportingMonth + 1).padStart(2, "0")}`;
+  const latestPeriodKey = periodSummaries.some(period => period.key === currentPeriodKey)
+    ? currentPeriodKey
+    : (periodSummaries[0]?.key || currentSummary.key);
 
   const projectionByFinancial = moneyBy(projection.projection, x => x.financial, x => x.amount);
   const dispersionByFinancial = moneyBy(projection.dispersions, x => x.financial, x => x.amount);
