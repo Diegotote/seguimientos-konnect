@@ -2,7 +2,7 @@
 import * as XLSX from "xlsx";
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v27_data";
+const STORAGE_KEY = "konnect_dashboard_v30_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -29,6 +29,13 @@ const MONTHS = [
   "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
 ];
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const OPERATIONAL_TARGET_OVERRIDES = {
+  7: 76169192,
+  8: 67769192,
+  9: 76169192,
+  10: 76169192,
+  11: 60000000
+};
 
 
 const FINANCIAL_NAME_ALIASES = {
@@ -60,7 +67,9 @@ const FINANCIAL_NAME_ALIASES = {
 
 const DEFAULT_FINANCIAL_COMMENT_ACTIVITY = {
   periodLabel: "Junio · Julio 2026",
-  note: "La cobertura corresponde al análisis de actividad junio-julio 2026; las operaciones activas se recalculan sobre la base visible del pipeline.",
+  sourceYear: 2026,
+  sourceMonthIndexes: [5, 6],
+  note: "Comentarios = mensajes escritos por cuentas de la financiera. Operaciones comentadas = folios donde la financiera dejó al menos un comentario. Cobertura = operaciones comentadas ÷ operaciones totales del mismo periodo.",
   withComments: [
     { name: "Fluxo", comments: 87, share: 68.50, coverage: 69.49, fallbackTotalOperations: 15 },
     { name: "HeyBanco", comments: 24, share: 18.90, coverage: 62.50, fallbackTotalOperations: 6 },
@@ -96,24 +105,25 @@ function prettyFinancialName(value) {
   return FINANCIAL_NAME_ALIASES[key] || String(value ?? "Sin financiera").trim() || "Sin financiera";
 }
 
-function buildFinancialCommentActivity(rows, latestDate) {
-  const currentMonth = latestDate?.getMonth?.() ?? 6;
-  const currentYear = latestDate?.getFullYear?.() ?? 2026;
-  const activeRows = (rows || []).filter(row => {
-    if (!row.date) return false;
-    const diffMonths = (currentYear - row.date.getFullYear()) * 12 + (currentMonth - row.date.getMonth());
-    return diffMonths >= 0 && diffMonths <= 1;
-  });
+function buildFinancialCommentActivity(rows) {
+  const sourceYear = DEFAULT_FINANCIAL_COMMENT_ACTIVITY.sourceYear;
+  const sourceMonths = DEFAULT_FINANCIAL_COMMENT_ACTIVITY.sourceMonthIndexes;
+  const activeRows = (rows || []).filter(row =>
+    row.date && row.date.getFullYear() === sourceYear && sourceMonths.includes(row.date.getMonth())
+  );
   const counts = countBy(activeRows, row => normalizeText(row.financial) || "SIN FINANCIERA");
   const commentedKeys = new Set(DEFAULT_FINANCIAL_COMMENT_ACTIVITY.withComments.map(item => normalizeText(item.name)));
   const withComments = DEFAULT_FINANCIAL_COMMENT_ACTIVITY.withComments.map(item => {
     const totalOperations = counts[normalizeText(item.name)] || item.fallbackTotalOperations || 0;
-    const baseTotal = totalOperations || item.fallbackTotalOperations || 0;
-    const commentedOperations = Math.max(1, Math.min(baseTotal, Math.round(baseTotal * item.coverage / 100)));
+    const commentedOperations = totalOperations
+      ? Math.max(1, Math.min(totalOperations, Math.round(totalOperations * item.coverage / 100)))
+      : 0;
+    const coverage = totalOperations ? commentedOperations / totalOperations * 100 : 0;
     return {
       ...item,
-      totalOperations: baseTotal,
-      commentedOperations
+      totalOperations,
+      commentedOperations,
+      coverage
     };
   });
   const withoutComments = entriesSorted(counts)
@@ -122,11 +132,11 @@ function buildFinancialCommentActivity(rows, latestDate) {
       name: prettyFinancialName(name),
       activeOperations
     }));
-  const periodStart = new Date(currentYear, currentMonth - 1, 1);
   return {
-    periodLabel: `${MONTHS[periodStart.getMonth()].charAt(0)}${MONTHS[periodStart.getMonth()].slice(1).toLowerCase()} · ${MONTHS[currentMonth].charAt(0)}${MONTHS[currentMonth].slice(1).toLowerCase()} ${currentYear}`,
+    periodLabel: DEFAULT_FINANCIAL_COMMENT_ACTIVITY.periodLabel,
     note: DEFAULT_FINANCIAL_COMMENT_ACTIVITY.note,
     totalComments: sumBy(withComments, item => item.comments),
+    totalCommentedOperations: sumBy(withComments, item => item.commentedOperations),
     withComments,
     withoutComments: withoutComments.length ? withoutComments : DEFAULT_FINANCIAL_COMMENT_ACTIVITY.fallbackWithoutComments,
     commentingFinancials: withComments.length,
@@ -160,16 +170,16 @@ function renderFinancialCommentActivity(activity) {
           <div class="finance-legend-title">Financiera</div>
           <div class="finance-legend-name">${escapeHtml(item.name)}</div>
         </div>
-        <div class="finance-legend-meta">${formatNumber(item.commentedOperations)} ops.</div>
+        <div class="finance-legend-meta">${formatNumber(item.comments)} comentarios · ${formatNumber(item.commentedOperations)} ops.</div>
       </div>
     `).join("");
 
     donutHost.innerHTML = `
       <div class="finance-donut-stack">
         ${buildDonut(
-          activity.withComments.map(item => ({ name: item.name, value: item.comments })),
-          formatNumber(activity.totalComments),
-          "Comentarios financieros",
+          activity.withComments.map(item => ({ name: item.name, value: item.commentedOperations })),
+          formatNumber(activity.totalCommentedOperations),
+          "Operaciones comentadas",
           250,
           false
         )}
@@ -291,6 +301,78 @@ function formatDate(value) {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(-2)}`;
 }
 
+function formatActivityDate(value) {
+  const d = parseDate(value);
+  if (!d) return String(value ?? "").trim();
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+function parseScheduleTime(value) {
+  if (value instanceof Date && !Number.isNaN(value.valueOf())) return value;
+  if (typeof value === "number") {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) return new Date(2000, 0, 1, parsed.H || 0, parsed.M || 0, parsed.S || 0);
+  }
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const text = normalizeText(raw).replace(/\./g, "");
+  const match = text.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|A M|P M)?/);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const meridian = (match[3] || "").replace(/\s/g, "");
+  if (meridian === "PM" && hour < 12) hour += 12;
+  if (meridian === "AM" && hour === 12) hour = 0;
+  return new Date(2000, 0, 1, hour, minute, 0);
+}
+
+function formatScheduleTime(value) {
+  const d = parseScheduleTime(value);
+  if (!d) return String(value ?? "").trim();
+  return d.toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit", hour12: true }).replace("a. m.", "a. m.").replace("p. m.", "p. m.");
+}
+
+function parseWeeklyActivitiesRows(rows) {
+  if (!rows) return [];
+  const headerIndex = rows.findIndex(row => {
+    const headers = mapHeaders(row || []);
+    return findHeaderIndex(headers, ["DIA", "DÍA"]) >= 0 && findHeaderIndex(headers, ["PERSONA", "NOMBRE"]) >= 0;
+  });
+  if (headerIndex < 0) return [];
+  const headers = mapHeaders(rows[headerIndex]);
+  const idx = {
+    day: findHeaderIndex(headers, ["DIA", "DÍA"]),
+    date: findHeaderIndex(headers, ["FECHA"]),
+    time: findHeaderIndex(headers, ["HORA"]),
+    person: findHeaderIndex(headers, ["PERSONA", "NOMBRE"]),
+    activity: findHeaderIndex(headers, ["ACTIVIDAD", "DETALLE", "REUNION", "REUNIÓN"])
+  };
+  const activities = rows.slice(headerIndex + 1).map(row => {
+    const person = idx.person >= 0 ? String(row[idx.person] ?? "").trim() : "";
+    const activity = idx.activity >= 0 ? String(row[idx.activity] ?? "").trim() : "";
+    if (!person && !activity) return null;
+    const dateValue = idx.date >= 0 ? row[idx.date] : "";
+    const timeValue = idx.time >= 0 ? row[idx.time] : "";
+    return {
+      day: idx.day >= 0 ? String(row[idx.day] ?? "").trim() : "",
+      date: formatActivityDate(dateValue),
+      rawDate: parseDate(dateValue)?.toISOString?.() || "",
+      time: formatScheduleTime(timeValue),
+      person: person || "Sin persona",
+      activity: activity || "Reunión"
+    };
+  }).filter(Boolean);
+
+  return activities.sort((a, b) => {
+    const da = a.rawDate ? new Date(a.rawDate).getTime() : 0;
+    const db = b.rawDate ? new Date(b.rawDate).getTime() : 0;
+    if (da !== db) return da - db;
+    const ta = parseScheduleTime(a.time)?.getTime?.() || 0;
+    const tb = parseScheduleTime(b.time)?.getTime?.() || 0;
+    return ta - tb;
+  });
+}
+
 function sheetRows(workbook, name) {
   const exact = workbook.SheetNames.find(n => normalizeText(n) === normalizeText(name));
   if (!exact) return null;
@@ -394,6 +476,52 @@ function statusColorClass(value) {
   if (t.includes("INTEGRACION") || t.includes("ASESORES KONNECT")) return "status-integration";
   if (t.includes("EVOLUC") || t.includes("TOUR") || t.includes("LLAMADA")) return "status-development";
   return "status-neutral";
+}
+
+function getOperationalTargetForMonth(monthIndex, fallback = 0) {
+  return OPERATIONAL_TARGET_OVERRIDES[monthIndex] || fallback || 0;
+}
+
+function getGapAmount(target, actual) {
+  return Number(target || 0) - Number(actual || 0);
+}
+
+function formatGapText(target, actual) {
+  const gap = getGapAmount(target, actual);
+  if (gap >= 0) return `Gap -${formatMoney(gap)} frente a la dispersión actual.`;
+  return `Meta superada por ${formatMoney(Math.abs(gap))}.`;
+}
+
+function renderOperationalFutureTargets(currentMonthIndex, currentAmount) {
+  const host = document.querySelector('#op-01 .future-targets-list');
+  if (!host) return;
+  const futureEntries = Object.entries(OPERATIONAL_TARGET_OVERRIDES)
+    .map(([monthIndex, target]) => ({ monthIndex: Number(monthIndex), target }))
+    .filter(item => item.monthIndex > Number(currentMonthIndex))
+    .sort((a, b) => a.monthIndex - b.monthIndex);
+
+  if (!futureEntries.length) {
+    host.innerHTML = '<div class="history-empty">No hay metas posteriores configuradas.</div>';
+    return;
+  }
+
+  host.innerHTML = futureEntries.map(item => {
+    const gap = getGapAmount(item.target, currentAmount);
+    const gapText = `${gap >= 0 ? '-' : '+'}${formatMoney(Math.abs(gap))}`;
+    return `
+      <div class="future-target-row">
+        <div class="future-target-month">${escapeHtml(MONTH_LABELS[item.monthIndex] || '')}</div>
+        <div class="future-target-target">
+          <strong>${formatMoney(item.target)}</strong>
+          <span>Meta mensual</span>
+        </div>
+        <div class="future-target-gap">
+          <strong>${gapText}</strong>
+          <span>Gap</span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function escapeHtml(value) {
@@ -752,6 +880,7 @@ function parseOperationalWorkbook(workbook) {
   const views = currentSummary.views;
 
   const periodRegistry = new Map();
+  periodRegistry.set(currentSummary.key, { monthIndex: reportingMonth, year: reportingYear });
   pipeline.forEach(row => {
     if (!row.date) return;
     const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
@@ -766,7 +895,7 @@ function parseOperationalWorkbook(workbook) {
     .sort((a, b) => (b.year - a.year) || (b.monthIndex - a.monthIndex))
     .map(period => buildOperationalPeriodSummary(pipeline, closures2026, period.monthIndex, period.year, projection.projection));
 
-  const latestPeriodKey = periodSummaries[0]?.key || currentSummary.key;
+  const latestPeriodKey = currentSummary.key;
 
   const projectionByFinancial = moneyBy(projection.projection, x => x.financial, x => x.amount);
   const dispersionByFinancial = moneyBy(projection.dispersions, x => x.financial, x => x.amount);
@@ -790,7 +919,7 @@ function parseOperationalWorkbook(workbook) {
     dispersed,
     missing,
     progress,
-    financialCommentActivity: buildFinancialCommentActivity(pipeline, reportingDate),
+    financialCommentActivity: buildFinancialCommentActivity(pipeline),
     closures2026,
     historical,
     previousHistory,
@@ -870,6 +999,7 @@ function buildDirectorScope(prospects, targetName) {
   };
 
   prospects.forEach(row => {
+    if (normalizeText(row.status).includes("BAJA")) return;
     const directorText = normalizeText(row.director);
     const referredText = normalizeText(row.referred);
     const directorIsTarget = directorText.includes(targetName);
@@ -984,8 +1114,10 @@ function parseCommercialClosures2026Rows(rows) {
 function parseCommercialWorkbook(workbook) {
   const rows = sheetRows(workbook, "PROSPECTOS MEMBRESIAS");
   const closureRows = sheetRows(workbook, "CIERRES 2026");
+  const weeklyRows = sheetRows(workbook, "Actividades Semanales");
   if (!rows) throw new Error("El archivo debe contener la hoja PROSPECTOS MEMBRESIAS.");
   const closures2026 = closureRows ? parseCommercialClosures2026Rows(closureRows) : [];
+  const weeklyActivities = weeklyRows ? parseWeeklyActivitiesRows(weeklyRows) : [];
 
   const headerRow = rows.findIndex(row => normalizeText(row?.[0]) === "NOMBRE" && normalizeText(row?.[7]).includes("ESTATUS"));
   if (headerRow < 0) throw new Error("No pude localizar los encabezados comerciales.");
@@ -1114,6 +1246,12 @@ function parseCommercialWorkbook(workbook) {
         { label: "Meses", value: formatNumber(new Set((closures2026.length ? closures2026 : HISTORICAL_MEMBERSHIP_CLOSINGS).map(row => row.month)).size) }
       ]
     },
+    actividades_semanales: {
+      title: "Actividades semanales",
+      columns: ["Día", "Fecha", "Hora", "Persona", "Actividad"],
+      rows: weeklyActivities.map(row => [row.day, row.date, row.time, row.person, row.activity]),
+      summary: [{ label: "Actividades", value: formatNumber(weeklyActivities.length) }]
+    },
     diego_propias: ownScopeView(directorScopes.diego, "Diego"),
     diego_referenciadas: referredScopeView(directorScopes.diego, "Diego"),
     jorge_propias: ownScopeView(directorScopes.jorge, "Jorge"),
@@ -1138,6 +1276,7 @@ function parseCommercialWorkbook(workbook) {
     nextClosings,
     historicalMembershipClosings: closures2026.length ? closures2026 : HISTORICAL_MEMBERSHIP_CLOSINGS,
     closures2026,
+    weeklyActivities,
     directorScopes,
     views
   };
@@ -1329,6 +1468,7 @@ function openOperationalPeriodPicker() {
     const totalVisible = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización", "Dispersión"]
       .reduce((sum, stage) => sum + Number(period.stages?.[stage]?.count || 0), 0);
     const isActive = period.key === app.activeOperationalPeriodKey;
+    const isCurrent = period.key === data.latestPeriodKey;
     const monthLabel = `${(MONTHS[period.monthIndex] || "PERIODO").charAt(0)}${(MONTHS[period.monthIndex] || "").slice(1).toLowerCase()} ${period.year}`;
     return `
       <button class="period-option ${isActive ? "active" : ""}" data-period-key="${period.key}" type="button">
@@ -1336,7 +1476,7 @@ function openOperationalPeriodPicker() {
           <strong>${monthLabel}</strong>
           <small>${formatNumber(totalVisible)} operaciones visibles en la estructura.</small>
         </div>
-        <span class="period-badge">${period.label}</span>
+        <span class="period-badge">${isCurrent ? "Periodo actual" : period.label}</span>
       </button>
     `;
   }).join("");
@@ -1412,11 +1552,16 @@ function updateOperationalVisual(data) {
   const currentCompareLabel = $("#op-01 .compare-pct-box:nth-child(2) .eyebrow");
   if (currentCompareLabel) currentCompareLabel.textContent = currentMonthTitle;
 
-  setMetric("op-01", "Meta mensual", formatMoney(data.target));
+  const currentTarget = getOperationalTargetForMonth(data.periodMonth, data.target);
+  const currentMissing = Math.max(currentTarget - data.dispersed, 0);
+  const currentProgress = currentTarget ? data.dispersed / currentTarget * 100 : 0;
+
+  setMetric("op-01", "Meta actual", formatMoney(currentTarget), formatGapText(currentTarget, data.dispersed));
   setMetric("op-01", "Dispersión actual", formatMoney(data.dispersed), `${data.projection.dispersions.length} operaciones confirmadas.`);
-  setMetric("op-01", "Faltante", formatMoney(data.missing));
-  setMetric("op-01", "Avance", formatPercent(data.progress));
+  setMetric("op-01", "Faltante", formatMoney(currentMissing), `Restante para alcanzar la meta de ${currentMonthTitle}.`);
+  setMetric("op-01", "Avance", formatPercent(currentProgress), `Cumplimiento frente a la meta actual.`);
   updateHistory(data);
+  renderOperationalFutureTargets(data.periodMonth, data.dispersed);
 
   const delta = data.dispersed - data.previousAmount;
   const deltaNode = $("#op-01 .compare-delta");
@@ -1432,7 +1577,7 @@ function updateOperationalVisual(data) {
   }
   if (pctBoxes[1]) {
     const pct = $(".compare-pct", pctBoxes[1]);
-    if (pct) pct.textContent = formatPercent(data.progress);
+    if (pct) pct.textContent = formatPercent(currentProgress);
   }
 
   app.currentOperationalPayload = data;
@@ -1664,6 +1809,44 @@ function renderScopeSourcePills(sources) {
   `).join("");
 }
 
+function renderWeeklyActivitiesSlide(data) {
+  const section = document.getElementById("com-activities");
+  if (!section) return;
+  const activities = data.weeklyActivities || [];
+  const totalNode = $(".weekly-total", section);
+  if (totalNode) totalNode.textContent = formatNumber(activities.length);
+
+  const days = [...new Set(activities.map(item => item.day).filter(Boolean))];
+  const daysNode = $(".weekly-days", section);
+  if (daysNode) daysNode.textContent = formatNumber(days.length);
+
+  const next = activities[0];
+  const nextPerson = $(".weekly-next-person", section);
+  const nextTime = $(".weekly-next-time", section);
+  if (nextPerson) nextPerson.textContent = next?.person || "Sin actividades";
+  if (nextTime) nextTime.textContent = next ? `${next.day || "—"} · ${next.time || "—"}` : "—";
+
+  const timeline = $(".weekly-timeline", section);
+  if (timeline) {
+    timeline.innerHTML = activities.length ? activities.map(item => `
+      <div class="weekly-item">
+        <div class="weekly-date-pill"><strong>${escapeHtml(item.day || "—")}</strong><span>${escapeHtml(item.date || "")}</span></div>
+        <div class="weekly-main">
+          <div class="weekly-person">${escapeHtml(item.person)}</div>
+          <div class="weekly-activity">${escapeHtml(item.activity)}</div>
+        </div>
+        <div class="weekly-time">${escapeHtml(item.time || "—")}</div>
+      </div>
+    `).join("") : '<div class="scope-empty">Sin actividades semanales cargadas.</div>';
+  }
+
+  const bars = $(".weekly-bars", section);
+  if (bars) {
+    const byDay = countBy(activities, row => row.day || "Sin día");
+    bars.innerHTML = buildBars(entriesSorted(byDay), false);
+  }
+}
+
 function renderDirectorScopeSlide(data) {
   const section = document.getElementById("com-scope");
   if (!section) return;
@@ -1746,6 +1929,7 @@ function updateCommercialVisual(data) {
   replaceSectionContent("com-01", "Directores con seguimiento abierto", buildBars(entriesSorted(data.directorsOpen || {}), false));
 
   renderDirectorScopeSlide(data);
+  renderWeeklyActivitiesSlide(data);
   renderMonthClosingSlide("com-02", data.currentClosings || [], data.currentCloseMonthIndex ?? new Date().getMonth(), data.currentCloseYear ?? new Date().getFullYear());
   renderHistoricalClosingsSlide(data.closures2026?.length ? data.closures2026 : (data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS));
   renderMonthClosingSlide("com-03", data.nextClosings || [], data.nextCloseMonthIndex ?? ((new Date().getMonth() + 1) % 12), data.nextCloseYear ?? new Date().getFullYear());
@@ -1770,6 +1954,7 @@ function updateCommercialVisual(data) {
     app.viewTables[key] = value;
   });
   app.viewGroups.alcance_directores = ["diego_propias", "diego_referenciadas", "jorge_propias", "jorge_referenciadas"];
+  app.viewGroups.actividades_semanales = ["actividades_semanales"];
   app.viewGroups.historial_cierres = ["cierres_transcurridos"];
 }
 
@@ -1826,7 +2011,8 @@ function showValidation(payload, file) {
       ["Diego · propias / referidas", `${formatNumber(payload.directorScopes?.diego?.ownCount || 0)} / ${formatNumber(payload.directorScopes?.diego?.referredCount || 0)}`],
       ["Jorge · propias / referidas", `${formatNumber(payload.directorScopes?.jorge?.ownCount || 0)} / ${formatNumber(payload.directorScopes?.jorge?.referredCount || 0)}`],
       [`Cierres ${MONTH_LABELS[payload.currentCloseMonthIndex] || "actual"}`, formatNumber(payload.currentClosings?.length || 0)],
-      [`Cierres ${MONTH_LABELS[payload.nextCloseMonthIndex] || "siguiente"}`, formatNumber(payload.nextClosings?.length || 0)]
+      [`Cierres ${MONTH_LABELS[payload.nextCloseMonthIndex] || "siguiente"}`, formatNumber(payload.nextClosings?.length || 0)],
+      ["Actividades semanales", formatNumber(payload.weeklyActivities?.length || 0)]
     );
   }
   updateValidation.innerHTML = items.map(([label, value]) => `

@@ -68,3 +68,9 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - Reconoce bloques mensuales de marzo a agosto con encabezados tipo Titular, Oficina, Correo, Teléfono, Región y Membresía.
 - Ya no reutiliza los cierres del archivo operativo ni los totales enero-marzo.
 - Se renovó la clave de almacenamiento local para evitar datos heredados.
+
+
+## V30
+- Se agregó la diapositiva comercial “Actividades de la semana”, alimentada por la hoja `Actividades Semanales`.
+- La diapositiva aparece después de “Diego y Jorge · cartera propia y referenciada”.
+- En alcance de Diego/Jorge ya no se cuentan registros con estatus BAJA.
