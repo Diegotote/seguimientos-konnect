@@ -70,16 +70,17 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - Se renovó la clave de almacenamiento local para evitar datos heredados.
 
 
-## V31
-- Corrección de metas mensuales en inicio operativo.
-- Se agregó/forzó bloque de metas posteriores con gap.
-- La estructura por estatus considera fecha de comentario para capturar actividad del periodo actual.
-- Corrección visual en gráfica de comentarios de financieras.
+## V30
+- Se agregó la diapositiva comercial “Actividades de la semana”, alimentada por la hoja `Actividades Semanales`.
+- La diapositiva aparece después de “Diego y Jorge · cartera propia y referenciada”.
+- En alcance de Diego/Jorge ya no se cuentan registros con estatus BAJA.
 
+## V32 recuperación de línea
 
-## V31.1
-- Corrección de carga de JavaScript en Vercel: `dist/index.html` ahora usa XLSX por CDN y `/assets/updater-v20.js`, por lo que vuelve a funcionar el botón “Actualizar presentaciones”.
-
-
-## V31.2
-- Restaurada la carga local de `xlsx-core.js` antes de `updater-v20.js` en `dist/index.html`. Esto corrige el botón “Actualizar presentaciones” en Vercel sin depender del CDN externo.
+Esta versión toma V30 como base estable y conserva:
+- Actividades Semanales en comercial.
+- Exclusión de registros con estatus BAJA en cartera propia/referenciada y métricas comerciales.
+- Botón Actualizar presentaciones funcionando con XLSX local.
+- Metas operativas agosto-diciembre y gap.
+- Estructura por estatus por periodo real de la hoja PIPELINE, sin mezclar con fechas de comentario.
+- Corrección visual de la gráfica de comentarios de financieras.
