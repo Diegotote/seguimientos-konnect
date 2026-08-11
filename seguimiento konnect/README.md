@@ -75,3 +75,7 @@ El archivo `vercel.json` ya publica la carpeta `dist` sin instalar ni compilar d
 - Se agregó/forzó bloque de metas posteriores con gap.
 - La estructura por estatus considera fecha de comentario para capturar actividad del periodo actual.
 - Corrección visual en gráfica de comentarios de financieras.
+
+
+## V31.1
+- Corrección de carga de JavaScript en Vercel: `dist/index.html` ahora usa XLSX por CDN y `/assets/updater-v20.js`, por lo que vuelve a funcionar el botón “Actualizar presentaciones”.
