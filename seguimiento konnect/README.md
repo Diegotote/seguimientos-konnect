@@ -106,3 +106,11 @@ Esta versión toma V30 como base estable y conserva:
 - La dona de Estado comercial usa solo Cierre, Desarrollo y Reactivación del foco Diego/Jorge.
 - Las barras de Directores con seguimiento abierto muestran únicamente Diego y Jorge.
 - El botón Ver operaciones del panorama abre solo las operaciones activas de Diego/Jorge y sus desgloses.
+
+## V36 · regla de periodos operativos
+- Estructura por estatus:
+  - Viabilidad se lee únicamente del periodo seleccionado.
+  - Integración, Análisis, Autorización y Formalización se leen del pipeline completo.
+  - Dispersión usa todo CIERRES 2026.
+- Las tablas de “Ver operaciones” siguen la misma regla.
+- Se cambió la clave local a `konnect_dashboard_v36_data` para evitar arrastre de datos anteriores.

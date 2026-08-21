@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v35_data";
+const STORAGE_KEY = "konnect_dashboard_v36_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -816,13 +816,21 @@ function buildOperationalTableViews(stageRows, projectionRows = []) {
 }
 
 function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, year, projectionRows = []) {
-  const currentRows = (pipelineRows || []).filter(row =>
+  const allRows = pipelineRows || [];
+  const currentPeriodRows = allRows.filter(row =>
     row.date && row.date.getFullYear() === year && row.date.getMonth() === monthIndex
   );
-  const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización"];
+
   const stages = {};
+  const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización"];
+
   stageNames.forEach(stage => {
-    const rows = currentRows.filter(row => row.status === stage);
+    // Regla operativa:
+    // Viabilidad sí se lee únicamente del periodo seleccionado.
+    // Las demás etapas representan inventario activo del pipeline completo,
+    // porque una operación ingresada en meses anteriores puede haber avanzado apenas.
+    const sourceRows = stage === "Viabilidad" ? currentPeriodRows : allRows;
+    const rows = sourceRows.filter(row => row.status === stage);
     stages[stage] = {
       rows,
       count: rows.length,
@@ -831,12 +839,12 @@ function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, y
     };
   });
 
-  const dispersionRows = (closures2026 || []).filter(row => row.year === year && row.monthIndex === monthIndex);
+  const allClosureRows = closures2026 || [];
   stages["Dispersión"] = {
-    rows: dispersionRows,
-    count: dispersionRows.length,
-    requested: sumBy(dispersionRows, x => x.amount),
-    granted: sumBy(dispersionRows, x => x.amount)
+    rows: allClosureRows,
+    count: allClosureRows.length,
+    requested: sumBy(allClosureRows, x => x.amount),
+    granted: sumBy(allClosureRows, x => x.amount)
   };
 
   return {
