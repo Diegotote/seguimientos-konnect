@@ -2,7 +2,7 @@
 import * as XLSX from "xlsx";
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v36_data";
+const STORAGE_KEY = "konnect_dashboard_v37_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -825,11 +825,12 @@ function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, y
   const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización"];
 
   stageNames.forEach(stage => {
-    // Regla operativa:
-    // Viabilidad sí se lee únicamente del periodo seleccionado.
-    // Las demás etapas representan inventario activo del pipeline completo,
-    // porque una operación ingresada en meses anteriores puede haber avanzado apenas.
-    const sourceRows = stage === "Viabilidad" ? currentPeriodRows : allRows;
+    // Regla operativa V37:
+    // Viabilidad e Integración se leen únicamente del periodo seleccionado.
+    // Análisis, Autorización y Formalización representan inventario activo
+    // del pipeline completo, porque pueden haber avanzado desde meses anteriores.
+    const periodOnlyStages = ["Viabilidad", "Integración"];
+    const sourceRows = periodOnlyStages.includes(stage) ? currentPeriodRows : allRows;
     const rows = sourceRows.filter(row => row.status === stage);
     stages[stage] = {
       rows,
@@ -839,12 +840,12 @@ function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, y
     };
   });
 
-  const allClosureRows = closures2026 || [];
+  const dispersionRows = (closures2026 || []).filter(row => row.year === year && row.monthIndex === monthIndex);
   stages["Dispersión"] = {
-    rows: allClosureRows,
-    count: allClosureRows.length,
-    requested: sumBy(allClosureRows, x => x.amount),
-    granted: sumBy(allClosureRows, x => x.amount)
+    rows: dispersionRows,
+    count: dispersionRows.length,
+    requested: sumBy(dispersionRows, x => x.amount),
+    granted: sumBy(dispersionRows, x => x.amount)
   };
 
   return {
