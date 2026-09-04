@@ -120,3 +120,8 @@ Esta versión toma V30 como base estable y conserva:
 - Análisis, Autorización y Formalización se cuentan desde todo el pipeline.
 - Las tablas de “Ver operaciones” siguen la misma regla.
 - Se cambió la clave local a `konnect_dashboard_v37_data`.
+
+## V38 · Proceso de Pago agregado
+- Se agrega Proceso de Pago a la diapositiva de Estructura por estatus.
+- Proceso de Pago se cuenta solo del periodo seleccionado, igual que Viabilidad, Integración y Dispersión.
+- Se agrega Proceso de Pago en “Ver operaciones”.
