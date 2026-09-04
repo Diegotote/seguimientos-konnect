@@ -1,0 +1,4 @@
+Base operativa: base/KONNECT_PIPE_BASE.xlsx
+Base comercial: base/COMERCIAL_KONNECT_BASE.xlsx
+
+V43 incluye los mismos archivos base de la V42 y agrega los ajustes visuales solicitados el 03/09/2026.
