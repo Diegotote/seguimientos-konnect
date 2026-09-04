@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v40_data";
+const STORAGE_KEY = "konnect_dashboard_v41_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -2008,50 +2008,157 @@ function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
   }
 }
 
+function scopeStatusClass(name) {
+  const normalized = normalizeText(name);
+  if (normalized === "PAGADO") return "status-success";
+  if (normalized === "NO VIABLE") return "status-danger";
+  if (normalized === "DESARROLLO") return "status-development";
+  if (normalized === "REACTIVACION") return "status-commission";
+  if (normalized === "CIERRE") return "status-payment";
+  return "status-neutral";
+}
+
+function renderScopeStatusPills(statuses) {
+  const entries = entriesSorted(statuses || {});
+  if (!entries.length) return '<div class="scope-empty">Sin operaciones en esta sección.</div>';
+  return entries.map(([name, value]) => `
+    <span class="scope-status-pill ${scopeStatusClass(name)}">
+      <span>${escapeHtml(name)}</span>
+      <strong>${formatNumber(value)}</strong>
+    </span>
+  `).join("");
+}
+
+function renderScopeSourcePills(sources) {
+  const entries = entriesSorted(sources || {});
+  if (!entries.length) return '<div class="scope-empty">Sin referencias registradas.</div>';
+  return entries.map(([name, value]) => `
+    <span class="scope-source-pill">
+      <span>Referenciadas por ${escapeHtml(name)}</span>
+      <strong>${formatNumber(value)}</strong>
+    </span>
+  `).join("");
+}
+
+function renderWeeklyActivitiesSlide(data) {
+  const section = document.getElementById("com-activities");
+  if (!section) return;
+  const activities = data.weeklyActivities || [];
+  const totalNode = $(".weekly-total", section);
+  if (totalNode) totalNode.textContent = formatNumber(activities.length);
+
+  const days = [...new Set(activities.map(item => item.day).filter(Boolean))];
+  const daysNode = $(".weekly-days", section);
+  if (daysNode) daysNode.textContent = formatNumber(days.length);
+
+  const next = activities[0];
+  const nextPerson = $(".weekly-next-person", section);
+  const nextTime = $(".weekly-next-time", section);
+  if (nextPerson) nextPerson.textContent = next?.person || "Sin actividades";
+  if (nextTime) nextTime.textContent = next ? `${next.day || "—"} · ${next.time || "—"}` : "—";
+
+  const timeline = $(".weekly-timeline", section);
+  if (timeline) {
+    timeline.innerHTML = activities.length ? activities.map(item => `
+      <div class="weekly-item">
+        <div class="weekly-date-pill"><strong>${escapeHtml(item.day || "—")}</strong><span>${escapeHtml(item.date || "")}</span></div>
+        <div class="weekly-main">
+          <div class="weekly-person">${escapeHtml(item.person)}</div>
+          <div class="weekly-activity">${escapeHtml(item.activity)}</div>
+        </div>
+        <div class="weekly-time">${escapeHtml(item.time || "—")}</div>
+      </div>
+    `).join("") : '<div class="scope-empty">Sin actividades semanales cargadas.</div>';
+  }
+
+  const bars = $(".weekly-bars", section);
+  if (bars) {
+    const byDay = countBy(activities, row => row.day || "Sin día");
+    bars.innerHTML = buildBars(entriesSorted(byDay), false);
+  }
+}
+
+function renderDirectorScopeSlide(data) {
+  const section = document.getElementById("com-scope");
+  if (!section) return;
+
+  const excludedNode = $(".scope-excluded-count", section);
+  if (excludedNode) excludedNode.textContent = formatNumber(data.excludedCount || 0);
+
+  ["diego", "jorge"].forEach(key => {
+    const scope = data.directorScopes?.[key] || {
+      name: key,
+      ownCount: 0,
+      referredCount: 0,
+      totalCount: 0,
+      ownStatuses: {},
+      referredStatuses: {},
+      referralSources: {}
+    };
+    const container = $(`[data-scope-person="${key}"]`, section);
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="scope-director-header">
+        <div>
+          <div class="scope-director-name">${escapeHtml(scope.name || key)}</div>
+          <div class="scope-director-sub"><strong>${formatNumber(scope.totalCount || 0)}</strong> operaciones dentro de su alcance</div>
+        </div>
+        <div class="scope-total-chip">${formatNumber(scope.totalCount || 0)} total</div>
+      </div>
+      <div class="scope-block-grid">
+        <div class="scope-block scope-own">
+          <div class="scope-block-top">
+            <div>
+              <div class="scope-kicker">Cartera directa</div>
+              <div class="scope-block-title">100% propias</div>
+            </div>
+            <div class="scope-count">${formatNumber(scope.ownCount || 0)}</div>
+          </div>
+          <div class="scope-label">Distribución por estatus</div>
+          <div class="scope-status-list">${renderScopeStatusPills(scope.ownStatuses)}</div>
+        </div>
+        <div class="scope-block scope-referred">
+          <div class="scope-block-top">
+            <div>
+              <div class="scope-kicker">Cartera compartida</div>
+              <div class="scope-block-title">Referenciadas</div>
+            </div>
+            <div class="scope-count">${formatNumber(scope.referredCount || 0)}</div>
+          </div>
+          <div class="scope-label">Origen de las referencias</div>
+          <div class="scope-source-list">${renderScopeSourcePills(scope.referralSources)}</div>
+          <div class="scope-label scope-label-status">Estatus</div>
+          <div class="scope-status-list">${renderScopeStatusPills(scope.referredStatuses)}</div>
+        </div>
+      </div>
+    `;
+  });
+}
+
+
+
 function updateCommercialVisual(data) {
-  const prospectTotal = data.focusedProspects?.length ?? 0;
-  const diegoScope = data.directorScopes?.diego?.totalCount || 0;
-  const jorgeScope = data.directorScopes?.jorge?.totalCount || 0;
-  const open = prospectTotal;
-  const currentFocusClosings = data.focusCurrentClosings?.length || 0;
-
-  setMetric("com-01", "Seguimiento abierto", formatNumber(open), "Diego y Jorge activos.");
-  setMetric("com-01", "Diego", formatNumber(diegoScope), "Cartera propia y referenciada.");
-  setMetric("com-01", "Jorge", formatNumber(jorgeScope), "Cartera propia y referenciada.");
-  setMetric("com-01", "Cierre prioritario", formatNumber(currentFocusClosings));
-
-  replaceSectionContent(
-    "com-01",
-    "Estado comercial",
-    buildDonut(
-      ["Cierre", "Desarrollo", "Reactivación"].map(name => ({ name, value: data.focusedBuckets?.[name] || 0 })),
-      formatNumber(prospectTotal),
-      "Seguimiento abierto",
-      260
-    )
-  );
-  replaceSectionContent("com-01", "Directores con seguimiento abierto", buildBars(entriesSorted(data.focusDirectorsOpen || {}), false));
-
-  renderDirectorScopeSlide(data);
+  // V41: solo actualiza las diapositivas comerciales que siguen visibles.
+  // V40 eliminó Panorama comercial, Alcance por director e Impulso comercial,
+  // así que no debemos depender de esos bloques para aplicar una actualización.
   renderWeeklyActivitiesSlide(data);
-  renderMonthClosingSlide("com-02", data.currentClosings || [], data.currentCloseMonthIndex ?? new Date().getMonth(), data.currentCloseYear ?? new Date().getFullYear());
-  renderHistoricalClosingsSlide(data.closures2026?.length ? data.closures2026 : (data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS));
-  renderMonthClosingSlide("com-03", data.nextClosings || [], data.nextCloseMonthIndex ?? ((new Date().getMonth() + 1) % 12), data.nextCloseYear ?? new Date().getFullYear());
-
-  const topLocation = entriesSorted(data.locationsOpen || {})[0] || ["Sin localidad", 0];
-  setMetric("com-04", "Reactivación", formatNumber(data.buckets?.["Reactivación"] || 0));
-  setMetric("com-04", "En cierre", formatNumber(data.buckets?.["Cierre"] || 0));
-  setMetric("com-04", "Localidad principal", topLocation[0], `${formatNumber(topLocation[1])} casos`);
-  setMetric("com-04", "Seguimiento abierto", formatNumber(open));
-  replaceSectionContent("com-04", "Localidades con mayor seguimiento", buildBars(entriesSorted(data.locationsOpen || {}, 6), false));
-  replaceSectionContent(
-    "com-04",
-    "Estado de seguimiento abierto",
-    buildDonut([
-      { name: "Reactivación", value: data.buckets?.["Reactivación"] || 0 },
-      { name: "Cierre", value: data.buckets?.["Cierre"] || 0 },
-      { name: "Desarrollo", value: data.buckets?.["Desarrollo"] || 0 }
-    ], formatNumber((data.buckets?.["Reactivación"] || 0) + (data.buckets?.["Cierre"] || 0) + (data.buckets?.["Desarrollo"] || 0)), "Casos visibles", 168, true)
+  renderMonthClosingSlide(
+    "com-02",
+    data.currentClosings || [],
+    data.currentCloseMonthIndex ?? new Date().getMonth(),
+    data.currentCloseYear ?? new Date().getFullYear()
+  );
+  renderHistoricalClosingsSlide(
+    data.closures2026?.length
+      ? data.closures2026
+      : (data.historicalMembershipClosings || HISTORICAL_MEMBERSHIP_CLOSINGS)
+  );
+  renderMonthClosingSlide(
+    "com-03",
+    data.nextClosings || [],
+    data.nextCloseMonthIndex ?? ((new Date().getMonth() + 1) % 12),
+    data.nextCloseYear ?? new Date().getFullYear()
   );
 
   Object.entries(data.views || {}).forEach(([key, value]) => {

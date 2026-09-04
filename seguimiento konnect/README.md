@@ -131,3 +131,9 @@ Esta versión toma V30 como base estable y conserva:
 - Viabilidad e Integración continúan leyendo únicamente el periodo seleccionado.
 - CIERRES 2026 detecta los encabezados mensuales por la columna A, aunque haya datos auxiliares en otras columnas.
 - Cierres de membresías por mes muestra desde marzo hasta el mes actual y admite septiembre en adelante.
+
+
+## V41 · Reparación del actualizador comercial
+- Se restauran las funciones de renderizado comercial que se eliminaron accidentalmente en V40.
+- El botón de Seguimiento comercial vuelve a procesar y aplicar el archivo comercial.
+- Se conservan las reglas V40 de Proceso de Pago/Pagadas y cierres mensuales.
