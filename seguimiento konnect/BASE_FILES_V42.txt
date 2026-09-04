@@ -1,0 +1,10 @@
+KONNECT V42 · ARCHIVOS BASE
+
+Operativo: base/KONNECT_PIPE_BASE.xlsx
+Origen: KONNECT PIPE (7).xlsx
+
+Comercial: base/COMERCIAL_KONNECT_BASE.xlsx
+Origen: COMERCIAL KONNECT (8).xlsx
+
+Estos archivos también se copian a dist/assets para que Vercel los cargue automáticamente al abrir la presentación.
+Una actualización manual desde el botón de la presentación se guarda en el navegador y tiene prioridad sobre los archivos base.

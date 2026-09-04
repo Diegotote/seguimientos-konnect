@@ -137,3 +137,13 @@ Esta versión toma V30 como base estable y conserva:
 - Se restauran las funciones de renderizado comercial que se eliminaron accidentalmente en V40.
 - El botón de Seguimiento comercial vuelve a procesar y aplicar el archivo comercial.
 - Se conservan las reglas V40 de Proceso de Pago/Pagadas y cierres mensuales.
+
+
+## V42 · archivos base incluidos
+
+La V42 arranca automáticamente con los archivos base incluidos en el repositorio:
+
+- `base/KONNECT_PIPE_BASE.xlsx` → seguimiento operativo.
+- `base/COMERCIAL_KONNECT_BASE.xlsx` → seguimiento comercial.
+
+En producción Vercel también se incluyen como `dist/assets/base-operational.xlsx` y `dist/assets/base-commercial.xlsx`. El botón **Actualizar presentación** sigue funcionando y cualquier actualización manual guardada en el navegador tiene prioridad sobre estos archivos base.

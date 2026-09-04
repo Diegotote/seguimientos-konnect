@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v41_data";
+const STORAGE_KEY = "konnect_dashboard_v42_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -35,6 +35,12 @@ const OPERATIONAL_TARGET_OVERRIDES = {
   9: 76169192,
   10: 76169192,
   11: 60000000
+};
+const GAP_RECOVERY_START_MONTH = 7; // Agosto funciona como punto de arranque con la meta ya ajustada existente.
+const GAP_RECOVERY_END_MONTH = 10;  // El gap se reparte hasta noviembre; diciembre queda fuera por ahora.
+const BUNDLED_BASE_FILES = {
+  operational: ["./assets/base-operational.xlsx", "/assets/base-operational.xlsx", "./dist/assets/base-operational.xlsx", "./base/KONNECT_PIPE_BASE.xlsx"],
+  commercial: ["./assets/base-commercial.xlsx", "/assets/base-commercial.xlsx", "./dist/assets/base-commercial.xlsx", "./base/COMERCIAL_KONNECT_BASE.xlsx"]
 };
 
 
@@ -525,7 +531,58 @@ function formatGapText(target, actual) {
   return `Meta superada por ${formatMoney(Math.abs(gap))}.`;
 }
 
-function renderOperationalFutureTargets(currentMonthIndex, currentAmount) {
+function getHistoricalCloseAmount(historical, monthIndex) {
+  const row = (historical || []).find(item => Number(item.monthIndex) === Number(monthIndex));
+  return Number(row?.amount || 0);
+}
+
+function hasHistoricalClose(historical, monthIndex) {
+  return (historical || []).some(item => Number(item.monthIndex) === Number(monthIndex));
+}
+
+function buildOperationalGapPlan(historical, currentMonthIndex) {
+  const currentMonth = Number(currentMonthIndex);
+  let previousGap = 0;
+  let previousAdjustedTarget = getOperationalTargetForMonth((currentMonth + 11) % 12, 0);
+  const closedSteps = [];
+
+  // Reconstruye el arrastre mes a mes desde agosto usando únicamente meses ya cerrados.
+  for (let monthIndex = GAP_RECOVERY_START_MONTH; monthIndex < currentMonth && monthIndex <= GAP_RECOVERY_END_MONTH; monthIndex += 1) {
+    const baseTarget = getOperationalTargetForMonth(monthIndex, 0);
+    const remainingIncludingThisMonth = Math.max(GAP_RECOVERY_END_MONTH - monthIndex + 1, 1);
+    const adjustment = monthIndex === GAP_RECOVERY_START_MONTH
+      ? 0
+      : Math.max(previousGap, 0) / remainingIncludingThisMonth;
+    const adjustedTarget = baseTarget + adjustment;
+
+    if (!hasHistoricalClose(historical, monthIndex)) break;
+    const actual = getHistoricalCloseAmount(historical, monthIndex);
+    previousGap = Math.max(adjustedTarget - actual, 0);
+    previousAdjustedTarget = adjustedTarget;
+    closedSteps.push({ monthIndex, baseTarget, adjustment, adjustedTarget, actual, gap: previousGap });
+  }
+
+  const recoveryMonthsRemaining = currentMonth <= GAP_RECOVERY_END_MONTH
+    ? Math.max(GAP_RECOVERY_END_MONTH - currentMonth + 1, 1)
+    : 0;
+  const monthlyAdjustment = recoveryMonthsRemaining
+    ? Math.max(previousGap, 0) / recoveryMonthsRemaining
+    : 0;
+  const baseTarget = getOperationalTargetForMonth(currentMonth, 0);
+  const adjustedTarget = baseTarget + monthlyAdjustment;
+
+  return {
+    baseTarget,
+    adjustedTarget,
+    pendingGap: Math.max(previousGap, 0),
+    monthlyAdjustment,
+    recoveryMonthsRemaining,
+    previousAdjustedTarget,
+    closedSteps
+  };
+}
+
+function renderOperationalFutureTargets(currentMonthIndex, gapPlan) {
   const host = document.querySelector('#op-01 .future-targets-list');
   if (!host) return;
   const futureEntries = Object.entries(OPERATIONAL_TARGET_OVERRIDES)
@@ -539,18 +596,23 @@ function renderOperationalFutureTargets(currentMonthIndex, currentAmount) {
   }
 
   host.innerHTML = futureEntries.map(item => {
-    const gap = getGapAmount(item.target, currentAmount);
-    const gapText = `${gap >= 0 ? '-' : '+'}${formatMoney(Math.abs(gap))}`;
+    const participatesInGap = item.monthIndex <= GAP_RECOVERY_END_MONTH;
+    const adjustment = participatesInGap ? Number(gapPlan?.monthlyAdjustment || 0) : 0;
+    const adjustedTarget = Number(item.target || 0) + adjustment;
     return `
       <div class="future-target-row">
         <div class="future-target-month">${escapeHtml(MONTH_LABELS[item.monthIndex] || '')}</div>
         <div class="future-target-target">
           <strong>${formatMoney(item.target)}</strong>
-          <span>Meta mensual</span>
+          <span>Meta base</span>
+        </div>
+        <div class="future-target-adjustment ${adjustment ? 'has-gap' : ''}">
+          <strong>${adjustment ? `+${formatMoney(adjustment)}` : 'Sin reparto'}</strong>
+          <span>${adjustment ? 'Ajuste gap' : 'Gap'}</span>
         </div>
         <div class="future-target-gap">
-          <strong>${formatMoney(item.target)}</strong>
-          <span>Meta</span>
+          <strong>${formatMoney(adjustedTarget)}</strong>
+          <span>Meta ajustada</span>
         </div>
       </div>
     `;
@@ -685,7 +747,9 @@ function parseHistoricalClosings(rows) {
         label.includes("MONTO DISPERSADO EN TOTAL") ||
         label.includes("MONTO DISPERSADO TOTAL") ||
         label.includes("MONTO DISPRSADO TOTAL") ||
-        label.includes("TOTAL DISPERSADO")
+        label.includes("MONTO TOTAL DISPERSADO") ||
+        label.includes("TOTAL DISPERSADO") ||
+        label === "MONTO DISPERSADO"
       ) {
         candidates.push({ label, amount });
       }
@@ -870,16 +934,16 @@ function buildOperationalTableViews(stageRows, projectionData = {}) {
       ]
     },
     proyeccion_real: {
-      title: "Proyección real",
+      title: "Proyección base",
       columns: ["Director comercial", "Cliente", "Financiera", "Broker / Consultoría", "Monto"],
       rows: realProjectionRows.map(projectionTableRow),
       summary: [
         { label: "Operaciones", value: formatNumber(realProjectionRows.length) },
-        { label: "Proyección real", value: formatMoney(sumBy(realProjectionRows, x => x.amount)) }
+        { label: "Proyección base", value: formatMoney(sumBy(realProjectionRows, x => x.amount)) }
       ]
     },
     operaciones_dificiles: {
-      title: "Operaciones difíciles",
+      title: "Requerido para escenario optimista",
       columns: ["Director comercial", "Cliente", "Financiera", "Broker / Consultoría", "Monto"],
       rows: optimisticProjectionRows.map(projectionTableRow),
       summary: [
@@ -888,12 +952,16 @@ function buildOperationalTableViews(stageRows, projectionData = {}) {
       ]
     },
     proyeccion: {
-      title: "Proyección optimista",
-      columns: ["Director comercial", "Cliente", "Financiera", "Broker / Consultoría", "Monto"],
-      rows: totalProjectionRows.map(projectionTableRow),
+      title: "Casos específicos para lograr el escenario optimista",
+      columns: ["Escenario", "Director comercial", "Cliente", "Financiera", "Broker / Consultoría", "Monto"],
+      rows: [
+        ...realProjectionRows.map(x => ["Proyección base", x.director || "", x.client || "", x.financial || "", x.broker || "", formatMoney(x.amount || 0)]),
+        ...optimisticProjectionRows.map(x => ["Requerido para escenario optimista", x.director || "", x.client || "", x.financial || "", x.broker || "", formatMoney(x.amount || 0)])
+      ],
       summary: [
-        { label: "Operaciones", value: formatNumber(totalProjectionRows.length) },
-        { label: "Proyección optimista", value: formatMoney(sumBy(totalProjectionRows, x => x.amount)) }
+        { label: "Casos", value: formatNumber(totalProjectionRows.length) },
+        { label: "Proyección base", value: formatMoney(sumBy(realProjectionRows, x => x.amount)) },
+        { label: "Escenario optimista", value: formatMoney(sumBy(totalProjectionRows, x => x.amount)) }
       ]
     },
     dispersion: {
@@ -925,7 +993,7 @@ function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, y
   const currentAndPreviousRows = [...previousPeriodRows, ...currentPeriodRows];
 
   stageNames.forEach(stage => {
-    // Regla operativa V40:
+    // Regla operativa V42:
     // Viabilidad e Integración: solo el periodo seleccionado.
     // Proceso de Pago y Pagadas: periodo seleccionado + periodo inmediato anterior.
     // Análisis, Autorización y Formalización: inventario visible del pipeline completo.
@@ -1057,7 +1125,9 @@ function parseOperationalWorkbook(workbook) {
     amount: 0
   };
   const previousAmount = previousHistory.amount || 0;
-  const previousProgress = target ? previousAmount / target * 100 : 0;
+  const gapPlan = buildOperationalGapPlan(historical, reportingMonth);
+  const previousTargetForProgress = gapPlan.previousAdjustedTarget || getOperationalTargetForMonth(previousMonthIndex, target);
+  const previousProgress = previousTargetForProgress ? previousAmount / previousTargetForProgress * 100 : 0;
 
   return {
     type: "operational",
@@ -1074,6 +1144,7 @@ function parseOperationalWorkbook(workbook) {
     previousHistory,
     previousAmount,
     previousProgress,
+    gapPlan,
     stages,
     projection,
     integrationBlockers,
@@ -1722,7 +1793,7 @@ function applyOperationalPeriodToSlide(data, periodKey = null) {
 
   app.activeOperationalPeriodKey = selected.key;
   app.currentOperationalPeriod = selected;
-  ["viabilidad", "integracion", "analisis", "autorizacion", "formalizacion", "proceso_pago", "dispersion"].forEach(key => {
+  ["viabilidad", "integracion", "analisis", "autorizacion", "formalizacion", "proceso_pago", "pagadas", "dispersion"].forEach(key => {
     if (selected.views?.[key]) app.viewTables[key] = selected.views[key];
   });
   if (data.views?.proyeccion) app.viewTables.proyeccion = data.views.proyeccion;
@@ -1745,19 +1816,30 @@ function updateOperationalVisual(data) {
   const currentCompareLabel = $("#op-01 .compare-pct-box:nth-child(2) .eyebrow");
   if (currentCompareLabel) currentCompareLabel.textContent = currentMonthTitle;
 
-  const currentTarget = getOperationalTargetForMonth(data.periodMonth, data.target);
+  const gapPlan = data.gapPlan || buildOperationalGapPlan(data.historical, data.periodMonth);
+  const currentBaseTarget = gapPlan.baseTarget || getOperationalTargetForMonth(data.periodMonth, data.target);
+  const currentGapAdjustment = Number(gapPlan.monthlyAdjustment || 0);
+  const currentTarget = gapPlan.adjustedTarget || (currentBaseTarget + currentGapAdjustment);
   const currentMissing = Math.max(currentTarget - data.dispersed, 0);
   const currentProgress = currentTarget ? data.dispersed / currentTarget * 100 : 0;
 
-  setMetric("op-01", "Meta mensual", formatMoney(currentTarget), formatGapText(currentTarget, data.dispersed));
-  setMetric("op-01", "Meta actual", formatMoney(currentTarget), formatGapText(currentTarget, data.dispersed));
+  setMetric("op-01", "Meta base", formatMoney(currentBaseTarget), `Meta definida para ${currentMonthTitle}.`);
+  setMetric(
+    "op-01",
+    "Ajuste por gap",
+    currentGapAdjustment ? `+${formatMoney(currentGapAdjustment)}` : formatMoney(0),
+    gapPlan.recoveryMonthsRemaining
+      ? `${formatMoney(gapPlan.pendingGap)} pendientes repartidos entre ${formatNumber(gapPlan.recoveryMonthsRemaining)} meses.`
+      : "Diciembre queda fuera del reparto por ahora."
+  );
+  setMetric("op-01", "Meta ajustada", formatMoney(currentTarget), `Meta base + ajuste mensual del gap.`);
   setMetric("op-01", "Dispersión actual", formatMoney(data.dispersed), `${data.projection.dispersions.length} operaciones confirmadas.`);
-  setMetric("op-01", "Faltante", formatMoney(currentMissing), `Restante para alcanzar la meta de ${currentMonthTitle}.`);
-  setMetric("op-01", "Avance", formatPercent(currentProgress), `Cumplimiento frente a la meta actual.`);
   updateHistory(data);
-  renderOperationalFutureTargets(data.periodMonth, data.dispersed);
+  renderOperationalFutureTargets(data.periodMonth, gapPlan);
 
   const delta = data.dispersed - data.previousAmount;
+  const deltaLabelNode = $("#op-01 .compare-delta-label");
+  if (deltaLabelNode) deltaLabelNode.textContent = `Variación vs ${data.previousHistory?.label || "periodo anterior"}`;
   const deltaNode = $("#op-01 .compare-delta");
   if (deltaNode) deltaNode.textContent = `${delta >= 0 ? "+" : "-"}${formatMoney(Math.abs(delta))}`;
   const baseNode = $("#op-01 .compare-base");
@@ -1797,20 +1879,27 @@ function updateOperationalVisual(data) {
   const projectionRealRows = data.projection.real || data.projection.projection || [];
   const projectionOptimisticRows = data.projection.optimistic || [];
   const projectionRealTotal = data.projection.totalReal ?? sumBy(projectionRealRows, x => x.amount);
-  const projectionOptimisticTotal = data.projection.totalOptimistic ?? sumBy(projectionOptimisticRows, x => x.amount);
-  const projectionTotal = data.projection.totalCombined ?? (projectionRealTotal + projectionOptimisticTotal);
+  const projectionTotal = data.projection.totalCombined ?? (projectionRealTotal + sumBy(projectionOptimisticRows, x => x.amount));
+  const projectionPeriodMonth = Number.isInteger(data.projection.periodMonth) ? data.projection.periodMonth : data.periodMonth;
+  const projectionPeriodYear = data.projection.periodYear || data.periodYear;
   const op04Chip = $("#op-04 .top-chip");
-  if (op04Chip) op04Chip.textContent = `Real ${formatMoney(projectionRealTotal)} · Optimista ${formatMoney(projectionTotal)}`;
-  setMetric("op-04", "Proyección real", formatMoney(projectionRealTotal), `${formatNumber(projectionRealRows.length)} operaciones en la tabla superior.`);
-  setMetric("op-04", "Operaciones difíciles", formatMoney(projectionOptimisticTotal), `${formatNumber(projectionOptimisticRows.length)} casos marcados como podrían tardar más.`);
-  setMetric("op-04", "Proyección optimista", formatMoney(projectionTotal), `Escenario total si también se concretan los casos difíciles.`);
-  replaceSectionContent("op-04", "Casos en la mira · proyección real", buildProjectionWatchList(projectionRealRows, "primary"));
-  replaceSectionContent("op-04", "Casos en la mira · operaciones difíciles", buildProjectionWatchList(projectionOptimisticRows, "secondary"));
+  if (op04Chip) op04Chip.textContent = `${MONTHS[projectionPeriodMonth] || "PERIODO"} ${projectionPeriodYear || ""}`;
+  setMetric("op-04", "Proyección base", formatMoney(projectionRealTotal), `${formatNumber(projectionRealRows.length)} casos actualmente en seguimiento.`);
+  setMetric("op-04", "Escenario optimista", formatMoney(projectionTotal), `${formatNumber(projectionRealRows.length + projectionOptimisticRows.length)} casos considerados en el escenario total.`);
+  const projectionCases = [
+    ...projectionRealRows.map(row => ({ ...row, scenario: "Proyección base", scenarioClass: "base" })),
+    ...projectionOptimisticRows.map(row => ({ ...row, scenario: "Requerido para escenario optimista", scenarioClass: "optimistic" }))
+  ];
+  const projectionCaseHost = $("#op-04 .projection-case-list-host");
+  if (projectionCaseHost) projectionCaseHost.innerHTML = buildProjectionWatchList(projectionCases);
+  const projectionCaseCount = $("#op-04 .projection-case-count");
+  if (projectionCaseCount) projectionCaseCount.textContent = `${formatNumber(projectionCases.length)} casos`;
+  renderProjectionComparison(projectionRealTotal, projectionTotal);
 
   setMetric("op-05", "Monto dispersado", formatMoney(data.dispersed));
   setMetric("op-05", "Operaciones", formatNumber(data.projection.dispersions.length));
-  setMetric("op-05", "Avance", formatPercent(data.progress));
-  setMetric("op-05", "Faltante", formatMoney(data.missing));
+  setMetric("op-05", "Avance", formatPercent(currentProgress));
+  setMetric("op-05", "Faltante", formatMoney(currentMissing));
   replaceSectionContent("op-05", "Operaciones por financiera", buildBars(entriesSorted(data.dispersionCountByFinancial), false));
 
   const sortedDisp = [...data.projection.dispersions].sort((a, b) => b.amount - a.amount);
@@ -1877,28 +1966,45 @@ function renderMonthClosingSlide(sectionId, rows, monthIndex, year) {
 
 
 
-function buildProjectionWatchList(rows = [], tone = "primary") {
+function buildProjectionWatchList(rows = []) {
   if (!rows.length) {
     return `<div class="projection-watch-scroll"><div class="projection-empty">No hay casos visibles en esta sección.</div></div>`;
   }
   return `
-    <div class="projection-watch-scroll ${tone === "secondary" ? "secondary" : "primary"}">
+    <div class="projection-watch-scroll projection-combined-list">
       ${rows.map(row => `
-        <article class="projection-case ${tone === "secondary" ? "secondary" : "primary"}">
-          <div class="projection-case-head">
-            <div>
+        <article class="projection-case ${row.scenarioClass === "optimistic" ? "optimistic" : "base"}">
+          <div class="projection-case-main">
+            <div class="projection-case-copy">
               <div class="projection-case-client">${escapeHtml(row.client || "Sin cliente")}</div>
-              <div class="projection-case-sub">${escapeHtml(row.financial || "Sin financiera")}</div>
+              <div class="projection-case-sub">${escapeHtml(row.financial || "Sin financiera")} · ${escapeHtml(row.broker || "Sin broker")}</div>
             </div>
             <div class="projection-case-amount">${formatMoney(row.amount || 0)}</div>
-          </div>
-          <div class="projection-case-meta">
-            <span>${escapeHtml(row.director || "Sin director")}</span>
-            <span>•</span>
-            <span>${escapeHtml(row.broker || "Sin broker")}</span>
+            <span class="projection-scenario-badge ${row.scenarioClass === "optimistic" ? "optimistic" : "base"}">${escapeHtml(row.scenario || "Proyección base")}</span>
           </div>
         </article>
       `).join("")}
+    </div>
+  `;
+}
+
+function renderProjectionComparison(baseAmount, optimisticAmount) {
+  const host = $("#op-04 .projection-compare-bars");
+  if (!host) return;
+  const max = Math.max(Number(optimisticAmount || 0), 1);
+  const basePct = Math.max(0, Math.min(100, Number(baseAmount || 0) / max * 100));
+  host.innerHTML = `
+    <div class="projection-compare-row">
+      <div class="projection-compare-label">Proyección base</div>
+      <div class="projection-compare-track"><div class="projection-compare-fill base" style="--w:${basePct.toFixed(2)}%"></div></div>
+      <div class="projection-compare-value">${formatMoney(baseAmount || 0)}</div>
+      <div class="projection-compare-pct base">${Math.round(basePct)}%</div>
+    </div>
+    <div class="projection-compare-row">
+      <div class="projection-compare-label">Escenario optimista</div>
+      <div class="projection-compare-track"><div class="projection-compare-fill optimistic" style="--w:100%"></div></div>
+      <div class="projection-compare-value">${formatMoney(optimisticAmount || 0)}</div>
+      <div class="projection-compare-pct optimistic">100%</div>
     </div>
   `;
 }
@@ -2321,16 +2427,62 @@ applyUpdate?.addEventListener("click", () => {
   setTimeout(closeToStart, 900);
 });
 
-// Restore last browser-saved update. V19 uses a new key so previous unfiltered data cannot override this version.
-try {
-  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-  if (saved.operational) applyPayload(saved.operational, false);
+async function fetchBundledWorkbook(candidates) {
+  let lastError = null;
+  for (const url of candidates || []) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      const buffer = await response.arrayBuffer();
+      return XLSX.read(buffer, { type: "array", cellDates: true });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("No pude cargar el archivo base incluido.");
+}
+
+async function loadBundledBasePayload(type) {
+  const workbook = await fetchBundledWorkbook(BUNDLED_BASE_FILES[type]);
+  return type === "operational"
+    ? parseOperationalWorkbook(workbook)
+    : parseCommercialWorkbook(workbook);
+}
+
+async function restoreSavedOrBundledBase() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  } catch (error) {
+    console.warn("No se pudo leer la actualización guardada:", error);
+  }
+
+  if (saved.operational) {
+    applyPayload(saved.operational, false);
+  } else {
+    try {
+      const baseOperational = await loadBundledBasePayload("operational");
+      applyPayload(baseOperational, false);
+    } catch (error) {
+      console.warn("No se pudo cargar el Pipeline base de V42:", error);
+    }
+  }
+
   if (saved.commercial) {
     applyPayload(saved.commercial, false);
-  } else if (window.__KONNECT_V19_INITIAL__) {
-    applyPayload(window.__KONNECT_V19_INITIAL__, false);
+  } else {
+    try {
+      const baseCommercial = await loadBundledBasePayload("commercial");
+      applyPayload(baseCommercial, false);
+    } catch (error) {
+      console.warn("No se pudo cargar el Comercial base de V42:", error);
+      if (window.__KONNECT_V19_INITIAL__) applyPayload(window.__KONNECT_V19_INITIAL__, false);
+    }
   }
-} catch (error) {
-  console.warn("No se pudo restaurar la última actualización:", error);
-  if (window.__KONNECT_V19_INITIAL__) applyPayload(window.__KONNECT_V19_INITIAL__, false);
 }
+
+// Restore last browser-saved update. V19 uses a new key so previous unfiltered data cannot override this version.
+restoreSavedOrBundledBase().catch(error => {
+  console.warn("No se pudieron inicializar los archivos base de V42:", error);
+  if (window.__KONNECT_V19_INITIAL__) applyPayload(window.__KONNECT_V19_INITIAL__, false);
+});
