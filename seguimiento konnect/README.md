@@ -125,3 +125,9 @@ Esta versión toma V30 como base estable y conserva:
 - Se agrega Proceso de Pago a la diapositiva de Estructura por estatus.
 - Proceso de Pago se cuenta solo del periodo seleccionado, igual que Viabilidad, Integración y Dispersión.
 - Se agrega Proceso de Pago en “Ver operaciones”.
+
+## V40 · Periodos de pago y cierres comerciales
+- Proceso de Pago y Pagadas muestran el periodo seleccionado y el periodo inmediato anterior.
+- Viabilidad e Integración continúan leyendo únicamente el periodo seleccionado.
+- CIERRES 2026 detecta los encabezados mensuales por la columna A, aunque haya datos auxiliares en otras columnas.
+- Cierres de membresías por mes muestra desde marzo hasta el mes actual y admite septiembre en adelante.

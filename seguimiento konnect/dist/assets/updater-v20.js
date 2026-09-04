@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v39_data";
+const STORAGE_KEY = "konnect_dashboard_v40_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -917,12 +917,23 @@ function buildOperationalPeriodSummary(pipelineRows, closures2026, monthIndex, y
   const stages = {};
   const stageNames = ["Viabilidad", "Integración", "Análisis", "Autorización", "Formalización", "Proceso de Pago", "Pagadas"];
 
+  const previousMonthIndex = (monthIndex + 11) % 12;
+  const previousYear = monthIndex === 0 ? year - 1 : year;
+  const previousPeriodRows = allRows.filter(row =>
+    row.date && row.date.getFullYear() === previousYear && row.date.getMonth() === previousMonthIndex
+  );
+  const currentAndPreviousRows = [...previousPeriodRows, ...currentPeriodRows];
+
   stageNames.forEach(stage => {
-    // Regla operativa V39:
-    // Viabilidad e Integración se leen únicamente del periodo seleccionado.
-    // El resto representa inventario / histórico visible del pipeline completo.
+    // Regla operativa V40:
+    // Viabilidad e Integración: solo el periodo seleccionado.
+    // Proceso de Pago y Pagadas: periodo seleccionado + periodo inmediato anterior.
+    // Análisis, Autorización y Formalización: inventario visible del pipeline completo.
     const periodOnlyStages = ["Viabilidad", "Integración"];
-    const sourceRows = periodOnlyStages.includes(stage) ? currentPeriodRows : allRows;
+    const currentAndPreviousStages = ["Proceso de Pago", "Pagadas"];
+    let sourceRows = allRows;
+    if (periodOnlyStages.includes(stage)) sourceRows = currentPeriodRows;
+    if (currentAndPreviousStages.includes(stage)) sourceRows = currentAndPreviousRows;
     const rows = sourceRows.filter(row => row.status === stage);
     stages[stage] = {
       rows,
@@ -1199,7 +1210,6 @@ function buildDirectorScope(prospects, targetName) {
 function parseCommercialClosures2026Rows(rows) {
   const parsed = [];
   let currentMonthIndex = null;
-  let currentMonthName = "";
   let currentYear = new Date().getFullYear();
   let headerMap = null;
 
@@ -1207,17 +1217,20 @@ function parseCommercialClosures2026Rows(rows) {
 
   (rows || []).forEach(row => {
     const values = (row || []).map(value => String(value ?? "").trim());
-    const normalized = values.map(normalizeText);
-    const firstNonEmptyIndex = normalized.findIndex(Boolean);
-    const firstValue = firstNonEmptyIndex >= 0 ? normalized[firstNonEmptyIndex] : "";
-    const monthMatch = firstValue.match(monthPattern);
+    const firstCell = normalizeText(values[0]);
+    const monthMatch = firstCell.match(monthPattern);
 
-    // Reconoce encabezados de sección como "MARZO", "CIERRES MARZO 2026"
-    // o "CIERRE DE MARZO" sin confundirlos con filas de datos.
-    if (monthMatch && normalized.filter(Boolean).length <= 2) {
-      currentMonthName = monthMatch[1];
-      currentMonthIndex = MONTHS.findIndex(month => normalizeText(month) === currentMonthName);
-      const yearMatch = firstValue.match(/(20\d{2})/);
+    // CIERRES 2026 puede tener datos auxiliares en columnas alejadas de la tabla principal.
+    // La sección mensual se identifica por la columna A, no por cuántas celdas tenga ocupadas la fila.
+    const monthOnlyPattern = new RegExp(`^${monthMatch?.[1] || ""}(?: 20\\d{2})?$`);
+    if (monthMatch && (
+      monthOnlyPattern.test(firstCell) ||
+      firstCell.includes(`CIERRE ${monthMatch[1]}`) ||
+      firstCell.includes(`CIERRES ${monthMatch[1]}`) ||
+      firstCell.includes(`CIERRE DE ${monthMatch[1]}`)
+    )) {
+      currentMonthIndex = MONTHS.findIndex(month => normalizeText(month) === monthMatch[1]);
+      const yearMatch = firstCell.match(/(20\d{2})/);
       if (yearMatch) currentYear = Number(yearMatch[1]);
       headerMap = null;
       return;
@@ -1232,17 +1245,9 @@ function parseCommercialClosures2026Rows(rows) {
     const membershipHeader = findHeaderIndex(potentialHeaders, ["MEMBRESIA", "PROGRAMA"]);
 
     if (nameHeader >= 0 && (officeHeader >= 0 || membershipHeader >= 0 || emailHeader >= 0)) {
-      headerMap = {
-        name: nameHeader,
-        office: officeHeader,
-        email: emailHeader,
-        phone: phoneHeader,
-        region: regionHeader,
-        membership: membershipHeader
-      };
+      headerMap = { name: nameHeader, office: officeHeader, email: emailHeader, phone: phoneHeader, region: regionHeader, membership: membershipHeader };
       return;
     }
-
     if (currentMonthIndex == null || !headerMap) return;
 
     const name = values[headerMap.name] || "";
@@ -1267,7 +1272,6 @@ function parseCommercialClosures2026Rows(rows) {
       membership: membership || "KONNECT EVOLUCIONA"
     });
   });
-
   return parsed;
 }
 
@@ -1902,37 +1906,39 @@ function buildProjectionWatchList(rows = [], tone = "primary") {
 function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
   const section = document.getElementById("com-history");
   if (!section) return;
+
   const sourceRows = Array.isArray(rows) && rows.length ? rows : HISTORICAL_MEMBERSHIP_CLOSINGS;
-  let dataRows = sourceRows
-    .filter(row => Number(row.monthIndex) >= 2 && Number(row.monthIndex) <= 7)
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonthIndex = today.getMonth();
+  const relevantRows = sourceRows
+    .filter(row => Number(row.year || currentYear) === currentYear)
+    .filter(row => Number(row.monthIndex) >= 2 && Number(row.monthIndex) <= 11)
     .slice()
     .sort((a, b) => Number(a.monthIndex || 0) - Number(b.monthIndex || 0));
-  if (!dataRows.length) {
-    dataRows = HISTORICAL_MEMBERSHIP_CLOSINGS
-      .filter(row => Number(row.monthIndex) >= 2 && Number(row.monthIndex) <= 7)
-      .slice()
-      .sort((a, b) => Number(a.monthIndex || 0) - Number(b.monthIndex || 0));
-  }
+  const fallbackRows = HISTORICAL_MEMBERSHIP_CLOSINGS
+    .filter(row => Number(row.year || currentYear) === currentYear)
+    .filter(row => Number(row.monthIndex) >= 2 && Number(row.monthIndex) <= 11)
+    .slice()
+    .sort((a, b) => Number(a.monthIndex || 0) - Number(b.monthIndex || 0));
+  const dataRows = relevantRows.length ? relevantRows : fallbackRows;
 
-  const monthCountsMap = new Map();
-  dataRows.forEach(row => {
-    const key = `${Number(row.monthIndex || 0)}|${row.month || "Sin mes"}`;
-    monthCountsMap.set(key, (monthCountsMap.get(key) || 0) + 1);
-  });
-  const monthEntries = [2, 3, 4, 5, 6, 7].map(monthIndex => {
-    const month = MONTHS[monthIndex];
-    const key = `${monthIndex}|${month}`;
-    return { monthIndex, month, value: monthCountsMap.get(key) || 0 };
-  });
+  const latestDataMonthIndex = dataRows.length ? Math.max(...dataRows.map(row => Number(row.monthIndex || 0))) : 2;
+  const displayEndMonthIndex = Math.max(Math.min(currentMonthIndex, 11), latestDataMonthIndex);
+  const displayMonthIndexes = [];
+  for (let monthIndex = 2; monthIndex <= displayEndMonthIndex; monthIndex++) displayMonthIndexes.push(monthIndex);
+  const monthEntries = displayMonthIndexes.map(monthIndex => ({
+    monthIndex,
+    month: MONTHS[monthIndex],
+    value: dataRows.filter(row => Number(row.monthIndex) === monthIndex).length
+  }));
 
-  const today = new Date();
-  const latestMonthIndex = today.getMonth();
-  const previousMonthIndex = (latestMonthIndex + 11) % 12;
-  const latestMonthName = MONTHS[latestMonthIndex] || "—";
+  const previousMonthIndex = (currentMonthIndex + 11) % 12;
+  const currentRows = dataRows.filter(row => Number(row.monthIndex) === currentMonthIndex);
+  const previousRows = dataRows.filter(row => Number(row.monthIndex) === previousMonthIndex);
+  const latestMonthName = MONTHS[currentMonthIndex] || "—";
   const previousMonthName = MONTHS[previousMonthIndex] || "—";
-  const currentRows = dataRows.filter(row => Number(row.monthIndex || 0) === latestMonthIndex);
-  const previousRows = dataRows.filter(row => Number(row.monthIndex || 0) === previousMonthIndex);
-  const topMonth = monthEntries.reduce((best, item) => (item.value > (best?.value || 0) ? item : best), monthEntries[0] || { month: "—", value: 0 });
+  const topMonth = monthEntries.reduce((best, item) => item.value > (best?.value || 0) ? item : best, monthEntries[0] || { month: "—", value: 0 });
 
   const totalNode = $(".history-close-total", section);
   const monthNode = $(".history-close-months", section);
@@ -1944,17 +1950,19 @@ function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
   const currentCount = $(".history-current-count", section);
   const prevCount = $(".history-prev-count", section);
   const chartRange = $(".history-chart-range", section);
+  const slideSub = $(".slide-sub", section);
 
   if (totalNode) totalNode.textContent = formatNumber(dataRows.length);
-  if (monthNode) monthNode.textContent = formatNumber(monthEntries.length);
+  if (monthNode) monthNode.textContent = formatNumber(monthEntries.filter(item => item.value > 0).length);
   if (topMonthNode) topMonthNode.textContent = topMonth.month || "—";
   if (topMonthSub) topMonthSub.textContent = `${formatNumber(topMonth.value || 0)} cierres`;
-  if (rangeNode && monthEntries.length) rangeNode.textContent = `${monthEntries[0].month} · ${monthEntries[monthEntries.length - 1].month} 2026`;
-  if (chartRange && monthEntries.length) chartRange.textContent = `${monthEntries[0].month} a ${monthEntries[monthEntries.length - 1].month} 2026`;
+  if (rangeNode && monthEntries.length) rangeNode.textContent = `${monthEntries[0].month} · ${monthEntries.at(-1).month} ${currentYear}`;
+  if (chartRange && monthEntries.length) chartRange.textContent = `${monthEntries[0].month} a ${monthEntries.at(-1).month} ${currentYear}`;
   if (currentTitle) currentTitle.textContent = `Cierres de ${latestMonthName.toLowerCase()}`;
   if (prevTitle) prevTitle.textContent = `Cierres de ${previousMonthName.toLowerCase()}`;
   if (currentCount) currentCount.textContent = `${formatNumber(currentRows.length)} ${currentRows.length === 1 ? "registro" : "registros"}`;
   if (prevCount) prevCount.textContent = `${formatNumber(previousRows.length)} ${previousRows.length === 1 ? "registro" : "registros"}`;
+  if (slideSub) slideSub.textContent = `Lectura ejecutiva de altas cerradas de marzo a ${monthEntries.at(-1)?.month.toLowerCase() || latestMonthName.toLowerCase()}, con foco en el periodo actual y el inmediato anterior.`;
 
   const renderList = target => rowsList => {
     const node = $(target, section);
@@ -1967,7 +1975,7 @@ function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
       <div class="history-close-item">
         <div>
           <div class="history-close-name">${escapeHtml(row.name || "—")}</div>
-          <div class="history-close-meta">${escapeHtml(row.financial || row.region || "—")} · ${escapeHtml(row.broker || row.office || "—")} · ${escapeHtml(row.amountDisplay || "")}</div>
+          <div class="history-close-meta">${escapeHtml(row.region || "—")} · ${escapeHtml(row.office || "—")}</div>
         </div>
         <span class="month-status-pill status-success">CERRADO</span>
       </div>
@@ -1980,148 +1988,25 @@ function renderHistoricalClosingsSlide(rows = HISTORICAL_MEMBERSHIP_CLOSINGS) {
   if (chartNode) {
     const maxValue = Math.max(...monthEntries.map(item => Number(item.value || 0)), 1);
     chartNode.innerHTML = monthEntries.map(item => {
-      const height = Math.max(22, Math.round((Number(item.value || 0) / maxValue) * 220));
+      const height = item.value ? Math.max(22, Math.round((Number(item.value || 0) / maxValue) * 220)) : 0;
       return `
         <div class="history-bar-col">
           <div class="history-bar-value">${formatNumber(item.value || 0)}</div>
-          <div class="history-bar-track">
-            <div class="history-bar-fill" style="height:${height}px"></div>
-          </div>
+          <div class="history-bar-track"><div class="history-bar-fill" style="height:${height}px"></div></div>
           <div class="history-bar-label">${escapeHtml(item.month)}</div>
         </div>
       `;
     }).join("");
   }
-}
 
-function scopeStatusClass(name) {
-  const normalized = normalizeText(name);
-  if (normalized === "PAGADO") return "status-success";
-  if (normalized === "NO VIABLE") return "status-danger";
-  if (normalized === "DESARROLLO") return "status-development";
-  if (normalized === "REACTIVACION") return "status-commission";
-  if (normalized === "CIERRE") return "status-payment";
-  return "status-neutral";
-}
-
-function renderScopeStatusPills(statuses) {
-  const entries = entriesSorted(statuses || {});
-  if (!entries.length) return '<div class="scope-empty">Sin operaciones en esta sección.</div>';
-  return entries.map(([name, value]) => `
-    <span class="scope-status-pill ${scopeStatusClass(name)}">
-      <span>${escapeHtml(name)}</span>
-      <strong>${formatNumber(value)}</strong>
-    </span>
-  `).join("");
-}
-
-function renderScopeSourcePills(sources) {
-  const entries = entriesSorted(sources || {});
-  if (!entries.length) return '<div class="scope-empty">Sin referencias registradas.</div>';
-  return entries.map(([name, value]) => `
-    <span class="scope-source-pill">
-      <span>Referenciadas por ${escapeHtml(name)}</span>
-      <strong>${formatNumber(value)}</strong>
-    </span>
-  `).join("");
-}
-
-function renderWeeklyActivitiesSlide(data) {
-  const section = document.getElementById("com-activities");
-  if (!section) return;
-  const activities = data.weeklyActivities || [];
-  const totalNode = $(".weekly-total", section);
-  if (totalNode) totalNode.textContent = formatNumber(activities.length);
-
-  const days = [...new Set(activities.map(item => item.day).filter(Boolean))];
-  const daysNode = $(".weekly-days", section);
-  if (daysNode) daysNode.textContent = formatNumber(days.length);
-
-  const next = activities[0];
-  const nextPerson = $(".weekly-next-person", section);
-  const nextTime = $(".weekly-next-time", section);
-  if (nextPerson) nextPerson.textContent = next?.person || "Sin actividades";
-  if (nextTime) nextTime.textContent = next ? `${next.day || "—"} · ${next.time || "—"}` : "—";
-
-  const timeline = $(".weekly-timeline", section);
-  if (timeline) {
-    timeline.innerHTML = activities.length ? activities.map(item => `
-      <div class="weekly-item">
-        <div class="weekly-date-pill"><strong>${escapeHtml(item.day || "—")}</strong><span>${escapeHtml(item.date || "")}</span></div>
-        <div class="weekly-main">
-          <div class="weekly-person">${escapeHtml(item.person)}</div>
-          <div class="weekly-activity">${escapeHtml(item.activity)}</div>
-        </div>
-        <div class="weekly-time">${escapeHtml(item.time || "—")}</div>
-      </div>
-    `).join("") : '<div class="scope-empty">Sin actividades semanales cargadas.</div>';
-  }
-
-  const bars = $(".weekly-bars", section);
-  if (bars) {
-    const byDay = countBy(activities, row => row.day || "Sin día");
-    bars.innerHTML = buildBars(entriesSorted(byDay), false);
+  const footerStats = $$(".history-chart-footer .history-mini-stat", section);
+  if (footerStats[2]) {
+    const strong = $("strong", footerStats[2]);
+    const small = $("small", footerStats[2]);
+    if (strong) strong.textContent = latestMonthName;
+    if (small) small.textContent = `Comparado contra ${previousMonthName.toLowerCase()}.`;
   }
 }
-
-function renderDirectorScopeSlide(data) {
-  const section = document.getElementById("com-scope");
-  if (!section) return;
-
-  const excludedNode = $(".scope-excluded-count", section);
-  if (excludedNode) excludedNode.textContent = formatNumber(data.excludedCount || 0);
-
-  ["diego", "jorge"].forEach(key => {
-    const scope = data.directorScopes?.[key] || {
-      name: key,
-      ownCount: 0,
-      referredCount: 0,
-      totalCount: 0,
-      ownStatuses: {},
-      referredStatuses: {},
-      referralSources: {}
-    };
-    const container = $(`[data-scope-person="${key}"]`, section);
-    if (!container) return;
-
-    container.innerHTML = `
-      <div class="scope-director-header">
-        <div>
-          <div class="scope-director-name">${escapeHtml(scope.name || key)}</div>
-          <div class="scope-director-sub"><strong>${formatNumber(scope.totalCount || 0)}</strong> operaciones dentro de su alcance</div>
-        </div>
-        <div class="scope-total-chip">${formatNumber(scope.totalCount || 0)} total</div>
-      </div>
-      <div class="scope-block-grid">
-        <div class="scope-block scope-own">
-          <div class="scope-block-top">
-            <div>
-              <div class="scope-kicker">Cartera directa</div>
-              <div class="scope-block-title">100% propias</div>
-            </div>
-            <div class="scope-count">${formatNumber(scope.ownCount || 0)}</div>
-          </div>
-          <div class="scope-label">Distribución por estatus</div>
-          <div class="scope-status-list">${renderScopeStatusPills(scope.ownStatuses)}</div>
-        </div>
-        <div class="scope-block scope-referred">
-          <div class="scope-block-top">
-            <div>
-              <div class="scope-kicker">Cartera compartida</div>
-              <div class="scope-block-title">Referenciadas</div>
-            </div>
-            <div class="scope-count">${formatNumber(scope.referredCount || 0)}</div>
-          </div>
-          <div class="scope-label">Origen de las referencias</div>
-          <div class="scope-source-list">${renderScopeSourcePills(scope.referralSources)}</div>
-          <div class="scope-label scope-label-status">Estatus</div>
-          <div class="scope-status-list">${renderScopeStatusPills(scope.referredStatuses)}</div>
-        </div>
-      </div>
-    `;
-  });
-}
-
 
 function updateCommercialVisual(data) {
   const prospectTotal = data.focusedProspects?.length ?? 0;
