@@ -149,8 +149,9 @@ La V42 arranca automáticamente con los archivos base incluidos en el repositori
 En producción Vercel también se incluyen como `dist/assets/base-operational.xlsx` y `dist/assets/base-commercial.xlsx`. El botón **Actualizar presentación** sigue funcionando y cualquier actualización manual guardada en el navegador tiene prioridad sobre estos archivos base.
 
 
-## V43
-- En “Periodo actual” se simplifican los KPIs superiores a: Meta actual, Dispersión actual y Faltante para la meta.
-- La meta principal se muestra como “Meta considerando el gap arrastrado”.
-- “Estructura por estatus” mantiene el mismo tamaño visual que las demás láminas operativas.
-- En “Proyección”, los casos requeridos para escenario optimista se ordenan arriba y la proyección base queda debajo.
+## V43 · ajustes finales
+- Periodo actual muestra únicamente Meta actual, Dispersión actual y Faltante para la meta.
+- Meta actual conserva internamente la automatización del gap, pero se presenta como una sola cifra.
+- Estructura por estatus mantiene el mismo tamaño visual de las demás diapositivas.
+- Proyección ordena primero los casos requeridos para escenario optimista y después la proyección base.
+- Se conserva la carga automática de los Excel base de V42.

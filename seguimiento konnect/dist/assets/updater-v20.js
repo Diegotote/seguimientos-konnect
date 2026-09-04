@@ -2,7 +2,7 @@
 const XLSX = window.XLSX;
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v42_data";
+const STORAGE_KEY = "konnect_dashboard_v43_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -1823,17 +1823,9 @@ function updateOperationalVisual(data) {
   const currentMissing = Math.max(currentTarget - data.dispersed, 0);
   const currentProgress = currentTarget ? data.dispersed / currentTarget * 100 : 0;
 
-  setMetric("op-01", "Meta base", formatMoney(currentBaseTarget), `Meta definida para ${currentMonthTitle}.`);
-  setMetric(
-    "op-01",
-    "Ajuste por gap",
-    currentGapAdjustment ? `+${formatMoney(currentGapAdjustment)}` : formatMoney(0),
-    gapPlan.recoveryMonthsRemaining
-      ? `${formatMoney(gapPlan.pendingGap)} pendientes repartidos entre ${formatNumber(gapPlan.recoveryMonthsRemaining)} meses.`
-      : "Diciembre queda fuera del reparto por ahora."
-  );
-  setMetric("op-01", "Meta ajustada", formatMoney(currentTarget), `Meta base + ajuste mensual del gap.`);
+  setMetric("op-01", "Meta actual", formatMoney(currentTarget), "Meta considerando el gap arrastrado.");
   setMetric("op-01", "Dispersión actual", formatMoney(data.dispersed), `${data.projection.dispersions.length} operaciones confirmadas.`);
+  setMetric("op-01", "Faltante para la meta", formatMoney(currentMissing), "Restante para alcanzar la meta actual.");
   updateHistory(data);
   renderOperationalFutureTargets(data.periodMonth, gapPlan);
 
@@ -1881,14 +1873,15 @@ function updateOperationalVisual(data) {
   const projectionRealTotal = data.projection.totalReal ?? sumBy(projectionRealRows, x => x.amount);
   const projectionTotal = data.projection.totalCombined ?? (projectionRealTotal + sumBy(projectionOptimisticRows, x => x.amount));
   const projectionPeriodMonth = Number.isInteger(data.projection.periodMonth) ? data.projection.periodMonth : data.periodMonth;
-  const projectionPeriodYear = data.projection.periodYear || data.periodYear;
+  const parsedProjectionYear = Number(data.projection.periodYear || 0);
+  const projectionPeriodYear = parsedProjectionYear >= 2024 && parsedProjectionYear <= 2030 ? parsedProjectionYear : data.periodYear;
   const op04Chip = $("#op-04 .top-chip");
   if (op04Chip) op04Chip.textContent = `${MONTHS[projectionPeriodMonth] || "PERIODO"} ${projectionPeriodYear || ""}`;
   setMetric("op-04", "Proyección base", formatMoney(projectionRealTotal), `${formatNumber(projectionRealRows.length)} casos actualmente en seguimiento.`);
   setMetric("op-04", "Escenario optimista", formatMoney(projectionTotal), `${formatNumber(projectionRealRows.length + projectionOptimisticRows.length)} casos considerados en el escenario total.`);
   const projectionCases = [
-    ...projectionRealRows.map(row => ({ ...row, scenario: "Proyección base", scenarioClass: "base" })),
-    ...projectionOptimisticRows.map(row => ({ ...row, scenario: "Requerido para escenario optimista", scenarioClass: "optimistic" }))
+    ...projectionOptimisticRows.map(row => ({ ...row, scenario: "Requerido para escenario optimista", scenarioClass: "optimistic" })),
+    ...projectionRealRows.map(row => ({ ...row, scenario: "Proyección base", scenarioClass: "base" }))
   ];
   const projectionCaseHost = $("#op-04 .projection-case-list-host");
   if (projectionCaseHost) projectionCaseHost.innerHTML = buildProjectionWatchList(projectionCases);
