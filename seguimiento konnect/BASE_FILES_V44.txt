@@ -1,0 +1,2 @@
+Base operativa: base/KONNECT_PIPE_BASE.xlsx
+Base comercial: base/COMERCIAL_KONNECT_BASE.xlsx

@@ -1,4 +1,4 @@
-# KONNECT Seguimiento V43
+# KONNECT Seguimiento V44
 
 Construida sobre la estructura visual y de despliegue de la V18/V19.
 
@@ -155,3 +155,11 @@ En producción Vercel también se incluyen como `dist/assets/base-operational.xl
 - Estructura por estatus mantiene el mismo tamaño visual de las demás diapositivas.
 - Proyección ordena primero los casos requeridos para escenario optimista y después la proyección base.
 - Se conserva la carga automática de los Excel base de V42.
+
+
+## V44 · corrección de proyección optimista
+- El lector de la hoja `PROYECCIÓN` reconoce tanto el encabezado histórico `PODRÍAN TARDAR MÁS` como el nuevo encabezado `PROYECCIÓN OPTIMISTA <MES> <AÑO>`.
+- La `Proyección base` suma únicamente el bloque superior.
+- El `Escenario optimista` suma la proyección base más los casos del bloque optimista.
+- Se actualiza el PIPE base incluido con `KONNECT PIPE (14).xlsx`.
+- Se usa una nueva clave de almacenamiento (`v44`) para evitar que el navegador restaure el cálculo incorrecto guardado por V43.

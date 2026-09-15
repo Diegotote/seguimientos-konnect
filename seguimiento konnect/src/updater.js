@@ -2,7 +2,7 @@
 import * as XLSX from "xlsx";
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v43_data";
+const STORAGE_KEY = "konnect_dashboard_v44_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -671,8 +671,24 @@ function parseProjectionSheet(rows) {
     const leftFirst = normalizeText(row[0]);
     const rightFirst = normalizeText(row[6]);
 
-    if (leftFirst.includes("PODRIAN TARDAR MAS")) {
+    // El bloque adicional puede venir con el nombre histórico “PODRÍAN TARDAR MÁS”
+    // o con el encabezado actual “PROYECCIÓN OPTIMISTA <MES> <AÑO>”.
+    // Ambos representan casos adicionales que se suman a la proyección base.
+    if (
+      leftFirst.includes("PODRIAN TARDAR MAS") ||
+      (leftFirst.includes("PROYECCION") && leftFirst.includes("OPTIMISTA"))
+    ) {
       leftMode = "optimistic";
+      continue;
+    }
+
+    // Si aparece un nuevo bloque de proyección normal, regresamos explícitamente a base.
+    if (
+      leftFirst.includes("PROYECCION") &&
+      !leftFirst.includes("OPTIMISTA") &&
+      !leftFirst.includes("OBJETIVO")
+    ) {
+      leftMode = "real";
       continue;
     }
 
