@@ -24,6 +24,45 @@ const applyUpdate = $("#applyUpdate");
 let updateType = null;
 let pendingPayload = null;
 
+function clearLegacyKonnectStorageKeys() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && /^konnect_dashboard_v\d+(?:_\d+)?_data$/i.test(key) && key !== STORAGE_KEY) keys.push(key);
+    }
+    keys.forEach(key => localStorage.removeItem(key));
+  } catch (error) {
+    console.warn("No se pudieron limpiar versiones anteriores de KONNECT:", error);
+  }
+}
+
+function persistPayloadSafely(payload) {
+  clearLegacyKonnectStorageKeys();
+  let existing = {};
+  try {
+    existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  } catch (error) {
+    existing = {};
+  }
+  existing[payload.type] = payload;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    return true;
+  } catch (error) {
+    console.warn("No se pudo guardar toda la actualización en localStorage:", error);
+    // Segundo intento: conservar únicamente el tipo que se acaba de actualizar.
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ [payload.type]: payload }));
+      return true;
+    } catch (secondError) {
+      console.warn("La actualización se aplicó, pero no pudo persistirse en el navegador:", secondError);
+      return false;
+    }
+  }
+}
+
 const MONTHS = [
   "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
   "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
@@ -2297,9 +2336,7 @@ function applyPayload(payload, persist = true) {
     updateCommercialVisual(payload);
   }
   if (persist) {
-    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    existing[payload.type] = payload;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    persistPayloadSafely(payload);
   }
   app.scaleRepeated?.();
 }
@@ -2429,11 +2466,20 @@ dropZone?.addEventListener("drop", async event => {
 
 applyUpdate?.addEventListener("click", () => {
   if (!pendingPayload) return;
-  applyPayload(pendingPayload, true);
-  updateStatus.className = "update-status success";
-  updateStatus.textContent = "Presentación actualizada correctamente.";
   applyUpdate.disabled = true;
-  setTimeout(closeToStart, 900);
+  updateStatus.className = "update-status";
+  updateStatus.textContent = "Aplicando actualización…";
+  try {
+    applyPayload(pendingPayload, true);
+    updateStatus.className = "update-status success";
+    updateStatus.textContent = "Presentación actualizada correctamente.";
+    setTimeout(closeToStart, 900);
+  } catch (error) {
+    console.error("Error al aplicar actualización:", error);
+    updateStatus.className = "update-status error";
+    updateStatus.textContent = `No se pudo aplicar: ${error?.message || "error inesperado"}.`;
+    applyUpdate.disabled = false;
+  }
 });
 
 async function fetchBundledWorkbook(candidates) {
@@ -2459,6 +2505,7 @@ async function loadBundledBasePayload(type) {
 }
 
 async function restoreSavedOrBundledBase() {
+  clearLegacyKonnectStorageKeys();
   let saved = {};
   try {
     saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");

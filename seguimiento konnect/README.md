@@ -163,3 +163,10 @@ En producción Vercel también se incluyen como `dist/assets/base-operational.xl
 - El `Escenario optimista` suma la proyección base más los casos del bloque optimista.
 - Se actualiza el PIPE base incluido con `KONNECT PIPE (14).xlsx`.
 - Se usa una nueva clave de almacenamiento (`v44`) para evitar que el navegador restaure el cálculo incorrecto guardado por V43.
+
+
+## V44.1 · Reparación del botón Aplicar actualización
+- Limpia automáticamente claves antiguas de almacenamiento de versiones previas para evitar saturar localStorage.
+- El botón Aplicar actualización ya no se rompe si el navegador alcanza el límite de almacenamiento.
+- Si la persistencia falla, la actualización visual se aplica y el usuario recibe un mensaje claro.
+- Se conserva el PIPE base V44 y la corrección de Proyección base vs Escenario optimista.
