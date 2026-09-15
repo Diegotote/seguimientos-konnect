@@ -170,3 +170,10 @@ En producción Vercel también se incluyen como `dist/assets/base-operational.xl
 - El botón Aplicar actualización ya no se rompe si el navegador alcanza el límite de almacenamiento.
 - Si la persistencia falla, la actualización visual se aplica y el usuario recibe un mensaje claro.
 - Se conserva el PIPE base V44 y la corrección de Proyección base vs Escenario optimista.
+
+
+## V44.2 · Corrección de dispersión en Proyección
+- Se corrige la lectura de la tabla derecha de `PROYECCIÓN` cuando en la misma fila comienza el bloque `PROYECCIÓN OPTIMISTA`.
+- La operación de $250,000 de MTB Servicios y Montajes Integrales ya no se omite.
+- Con `KONNECT PIPE (14)`, la dispersión de septiembre queda en $12,052,300 y 15 operaciones.
+- Se renueva la clave local a `konnect_dashboard_v44_2_data` para evitar datos guardados de V44/V44.1.

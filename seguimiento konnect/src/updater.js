@@ -2,7 +2,7 @@
 import * as XLSX from "xlsx";
 
 const app = window.__KONNECT__;
-const STORAGE_KEY = "konnect_dashboard_v44_data";
+const STORAGE_KEY = "konnect_dashboard_v44_2_data";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -712,26 +712,24 @@ function parseProjectionSheet(rows) {
 
     // El bloque adicional puede venir con el nombre histórico “PODRÍAN TARDAR MÁS”
     // o con el encabezado actual “PROYECCIÓN OPTIMISTA <MES> <AÑO>”.
-    // Ambos representan casos adicionales que se suman a la proyección base.
-    if (
+    // Importante: el cambio de bloque SOLO afecta la tabla izquierda. La tabla derecha
+    // de dispersiones puede seguir teniendo una operación válida en esa misma fila.
+    const isOptimisticHeader =
       leftFirst.includes("PODRIAN TARDAR MAS") ||
-      (leftFirst.includes("PROYECCION") && leftFirst.includes("OPTIMISTA"))
-    ) {
-      leftMode = "optimistic";
-      continue;
-    }
-
-    // Si aparece un nuevo bloque de proyección normal, regresamos explícitamente a base.
-    if (
+      (leftFirst.includes("PROYECCION") && leftFirst.includes("OPTIMISTA"));
+    const isRealProjectionHeader =
       leftFirst.includes("PROYECCION") &&
       !leftFirst.includes("OPTIMISTA") &&
-      !leftFirst.includes("OBJETIVO")
-    ) {
-      leftMode = "real";
-      continue;
-    }
+      !leftFirst.includes("OBJETIVO");
 
-    const isLeftHeader = leftFirst.includes("DIRECTOR COMERCIAL") || normalizeText(row[4]).includes("CLIENTE");
+    if (isOptimisticHeader) leftMode = "optimistic";
+    else if (isRealProjectionHeader) leftMode = "real";
+
+    const isLeftHeader =
+      isOptimisticHeader ||
+      isRealProjectionHeader ||
+      leftFirst.includes("DIRECTOR COMERCIAL") ||
+      normalizeText(row[4]).includes("CLIENTE");
     const isRightHeader = rightFirst.includes("DIRECTOR COMERCIAL") || normalizeText(row[10]).includes("CLIENTE");
 
     if (!isLeftHeader) {
